@@ -6,6 +6,7 @@ protocol HotkeyManagerDelegate: AnyObject {
     func hotkeyOptionReleased()
     func hotkeyEscPressed()
     func hotkeyFlagsChanged(isOptionPressed: Bool)
+    func hotkeyArrowPressed(backward: Bool)
     func isSwitcherVisible() -> Bool
 }
 
@@ -97,6 +98,15 @@ class HotkeyManager {
                     }
                     return nil // Swallow Esc
                 }
+            }
+            
+            // Left Arrow is 123, Right Arrow is 124
+            if (keyCode == 123 || keyCode == 124) && (delegate?.isSwitcherVisible() ?? false) {
+                let backward = (keyCode == 123)
+                DispatchQueue.main.async { [weak self] in
+                    self?.delegate?.hotkeyArrowPressed(backward: backward)
+                }
+                return nil // Swallow Arrow key presses
             }
         }
         

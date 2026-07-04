@@ -69,7 +69,7 @@ class AppDelegate: NSObject, NSApplicationDelegate, HotkeyManagerDelegate {
         
         let view = OnboardingView(state: appState)
         let window = NSWindow(
-            contentRect: NSRect(x: 0, y: 0, width: 620, height: 380),
+            contentRect: NSRect(x: 0, y: 0, width: 660, height: 460),
             styleMask: [.titled, .closable, .miniaturizable],
             backing: .buffered,
             defer: false
@@ -141,6 +141,24 @@ class AppDelegate: NSObject, NSApplicationDelegate, HotkeyManagerDelegate {
             
             switcherWindow?.update(windows: activeWindows, currentIndex: currentIndex)
         }
+    }
+    
+    func hotkeyArrowPressed(backward: Bool) {
+        guard switcherWindow?.isVisible ?? false, !activeWindows.isEmpty else { return }
+        
+        if backward {
+            currentIndex -= 1
+            if currentIndex < 0 {
+                currentIndex = activeWindows.count - 1
+            }
+        } else {
+            currentIndex += 1
+            if currentIndex >= activeWindows.count {
+                currentIndex = 0
+            }
+        }
+        
+        switcherWindow?.update(windows: activeWindows, currentIndex: currentIndex)
     }
     
     func hotkeyOptionReleased() {

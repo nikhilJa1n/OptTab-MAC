@@ -46,4 +46,8 @@ cat > "${APP_DIR}/Contents/Info.plist" <<EOF
 </plist>
 EOF
 
+# Sign the app bundle
+echo "=== Ad-hoc Signing App Bundle ==="
+codesign --force --deep --sign - "${APP_DIR}"
+
 echo "=== App Bundle created successfully at ${APP_DIR} ==="

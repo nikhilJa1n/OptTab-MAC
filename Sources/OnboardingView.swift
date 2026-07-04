@@ -120,7 +120,7 @@ struct OnboardingView: View {
             .frame(maxWidth: .infinity, maxHeight: .infinity)
             .background(Color(nsColor: .windowBackgroundColor))
         }
-        .frame(width: 620, height: 380)
+        .frame(width: 660, height: 460)
         .preferredColorScheme(.dark)
     }
 }
@@ -158,49 +158,78 @@ struct PermissionsTab: View {
     @ObservedObject var state: AppState
     
     var body: some View {
-        VStack(alignment: .leading, spacing: 20) {
-            Text("Permissions Configuration")
-                .font(.system(size: 18, weight: .bold, design: .rounded))
-                .foregroundColor(.white)
-            
-            Text("To display window switcher cards and intercept the **Option + Tab** shortcut, the application requires the following system permissions:")
-                .font(.system(size: 12, weight: .medium, design: .rounded))
-                .foregroundColor(.white.opacity(0.7))
-                .lineSpacing(4)
-            
-            VStack(spacing: 14) {
-                // Accessibility Permission Card
-                PermissionCard(
-                    title: "Accessibility Permission",
-                    description: "Enables keyboard interception (Option+Tab) and window focusing controls.",
-                    isGranted: state.isAccessibilityGranted,
-                    action: { Permissions.requestAccessibility() }
-                )
+        ScrollView(.vertical, showsIndicators: true) {
+            VStack(alignment: .leading, spacing: 20) {
+                Text("Permissions Configuration")
+                    .font(.system(size: 18, weight: .bold, design: .rounded))
+                    .foregroundColor(.white)
                 
-                // Screen Recording Permission Card
-                PermissionCard(
-                    title: "Screen & Window Recording",
-                    description: "Enables taking visual screenshots of active windows to show as thumbnails.",
-                    isGranted: state.isScreenRecordingGranted,
-                    action: { Permissions.requestScreenRecording() }
-                )
-            }
-            
-            if state.isAccessibilityGranted && state.isScreenRecordingGranted {
-                HStack(spacing: 10) {
-                    Image(systemName: "checkmark.circle.fill")
-                        .foregroundColor(.green)
-                        .font(.system(size: 18))
-                    Text("All systems configured! The window switcher is active.")
-                        .font(.system(size: 12, weight: .semibold, design: .rounded))
-                        .foregroundColor(.white.opacity(0.9))
+                Text("To display window switcher cards and intercept the **Option + Tab** shortcut, the application requires the following system permissions:")
+                    .font(.system(size: 12, weight: .medium, design: .rounded))
+                    .foregroundColor(.white.opacity(0.7))
+                    .lineSpacing(4)
+                
+                VStack(spacing: 14) {
+                    // Accessibility Permission Card
+                    PermissionCard(
+                        title: "Accessibility Permission",
+                        description: "Enables keyboard interception (Option+Tab) and window focusing controls.",
+                        isGranted: state.isAccessibilityGranted,
+                        action: { Permissions.requestAccessibility() }
+                    )
+                    
+                    // Screen Recording Permission Card
+                    PermissionCard(
+                        title: "Screen & Window Recording",
+                        description: "Enables taking visual screenshots of active windows to show as thumbnails.",
+                        isGranted: state.isScreenRecordingGranted,
+                        action: { Permissions.requestScreenRecording() }
+                    )
                 }
-                .padding(.vertical, 10)
+                
+                if state.isAccessibilityGranted && state.isScreenRecordingGranted {
+                    HStack(spacing: 10) {
+                        Image(systemName: "checkmark.circle.fill")
+                            .foregroundColor(.green)
+                            .font(.system(size: 18))
+                        Text("All systems configured! The window switcher is active.")
+                            .font(.system(size: 12, weight: .semibold, design: .rounded))
+                            .foregroundColor(.white.opacity(0.9))
+                    }
+                    .padding(.vertical, 10)
+                } else {
+                    VStack(alignment: .leading, spacing: 8) {
+                        HStack(alignment: .top, spacing: 8) {
+                            Image(systemName: "exclamationmark.triangle.fill")
+                                .foregroundColor(.orange)
+                                .font(.system(size: 14))
+                                .padding(.top, 1)
+                            
+                            Text("Permission issues after app update?")
+                                .font(.system(size: 12, weight: .bold, design: .rounded))
+                                .foregroundColor(.white)
+                        }
+                        
+                        Text("If you previously granted permissions but they now show as missing, macOS has cached the old signature. Go to **System Settings > Privacy & Security > Accessibility**, select **AdvancedDock**, click the **minus (–)** button to delete it, and relaunch the app to re-register it. If that fails, restart the app after toggling.")
+                            .font(.system(size: 11, weight: .medium, design: .rounded))
+                            .foregroundColor(.white.opacity(0.6))
+                            .lineSpacing(3)
+                            .padding(.leading, 22)
+                    }
+                    .padding(12)
+                    .background(Color.orange.opacity(0.08))
+                    .cornerRadius(10)
+                    .overlay(
+                        RoundedRectangle(cornerRadius: 10)
+                            .stroke(Color.orange.opacity(0.2), lineWidth: 1)
+                    )
+                    .padding(.top, 4)
+                }
+                
+                Spacer()
             }
-            
-            Spacer()
+            .padding(24)
         }
-        .padding(24)
     }
 }
 
@@ -347,7 +376,7 @@ struct HelpTab: View {
                 HelpRow(number: "1", text: "Ensure both permissions are granted and showing a green dot.")
                 HelpRow(number: "2", text: "Press and hold the **Option (⌥)** key down.")
                 HelpRow(number: "3", text: "Tap the **Tab (⇥)** key to bring up the window switcher HUD panel.")
-                HelpRow(number: "4", text: "Continue tapping **Tab** (or **Shift + Tab** to go backward) while holding Option to cycle through thumbnails.")
+                HelpRow(number: "4", text: "Cycle through thumbnails by tapping **Tab** (or **Shift + Tab** to go backward), or use the **Left (←) / Right (→)** Arrow keys.")
                 HelpRow(number: "5", text: "Release **Option** to switch directly to the highlighted window, or tap **Esc** to cancel.")
             }
             

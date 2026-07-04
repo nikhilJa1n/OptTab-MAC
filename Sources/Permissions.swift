@@ -8,7 +8,14 @@ struct Permissions {
     
     static func requestAccessibility() {
         let options = [kAXTrustedCheckOptionPrompt.takeUnretainedValue() as String: true]
-        _ = AXIsProcessTrustedWithOptions(options as CFDictionary)
+        let granted = AXIsProcessTrustedWithOptions(options as CFDictionary)
+        
+        // If not granted (or dialog suppressed), open System Settings directly
+        if !granted {
+            if let url = URL(string: "x-apple.systempreferences:com.apple.preference.security?Privacy_Accessibility") {
+                NSWorkspace.shared.open(url)
+            }
+        }
     }
     
     static func isScreenRecordingGranted() -> Bool {
@@ -16,6 +23,13 @@ struct Permissions {
     }
     
     static func requestScreenRecording() {
-        _ = CGRequestScreenCaptureAccess()
+        let granted = CGRequestScreenCaptureAccess()
+        
+        // If not granted (or dialog suppressed), open System Settings directly
+        if !granted {
+            if let url = URL(string: "x-apple.systempreferences:com.apple.preference.security?Privacy_ScreenCapture") {
+                NSWorkspace.shared.open(url)
+            }
+        }
     }
 }
