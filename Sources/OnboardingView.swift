@@ -8,9 +8,16 @@ class AppState: ObservableObject {
     @Published var isOptionKeyPressed = false
     @Published var isTabKeyPressed = false
     
+    @Published var enableArrowNavigation: Bool {
+        didSet {
+            UserDefaults.standard.set(enableArrowNavigation, forKey: "enableArrowNavigation")
+        }
+    }
+    
     private var timer: AnyCancellable?
     
     init() {
+        self.enableArrowNavigation = UserDefaults.standard.object(forKey: "enableArrowNavigation") as? Bool ?? true
         checkPermissions()
         startPermissionPolling()
     }
@@ -225,6 +232,34 @@ struct PermissionsTab: View {
                     )
                     .padding(.top, 4)
                 }
+                
+                // Preferences toggle section
+                VStack(alignment: .leading, spacing: 12) {
+                    Text("Preferences")
+                        .font(.system(size: 14, weight: .bold, design: .rounded))
+                        .foregroundColor(.white)
+                    
+                    Toggle(isOn: $state.enableArrowNavigation) {
+                        VStack(alignment: .leading, spacing: 2) {
+                            Text("Enable Arrow Key Navigation")
+                                .font(.system(size: 12, weight: .bold, design: .rounded))
+                                .foregroundColor(.white)
+                            Text("Allows cycling through windows using Left (←) and Right (→) arrow keys.")
+                                .font(.system(size: 10, weight: .medium, design: .rounded))
+                                .foregroundColor(.white.opacity(0.55))
+                                .lineLimit(2)
+                        }
+                    }
+                    .toggleStyle(SwitchToggleStyle(tint: .blue))
+                }
+                .padding(12)
+                .background(Color.white.opacity(0.04))
+                .cornerRadius(10)
+                .overlay(
+                    RoundedRectangle(cornerRadius: 10)
+                        .stroke(Color.white.opacity(0.08), lineWidth: 1)
+                )
+                .padding(.top, 8)
                 
                 Spacer()
             }

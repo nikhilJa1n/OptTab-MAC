@@ -47,7 +47,7 @@ class AppDelegate: NSObject, NSApplicationDelegate, HotkeyManagerDelegate {
     func setupStatusBar() {
         statusBarItem = NSStatusBar.system.statusItem(withLength: NSStatusItem.variableLength)
         if let button = statusBarItem?.button {
-            button.image = NSImage(systemSymbolName: "macwindow.on.rectangle", accessibilityDescription: "Advanced Switcher")
+            button.image = NSImage(systemSymbolName: "square.filled.on.square", accessibilityDescription: "Advanced Switcher")
             // Optional: Support dark/light mode for template images
             button.image?.isTemplate = true
         }
@@ -144,6 +144,7 @@ class AppDelegate: NSObject, NSApplicationDelegate, HotkeyManagerDelegate {
     }
     
     func hotkeyArrowPressed(backward: Bool) {
+        guard appState.enableArrowNavigation else { return }
         guard switcherWindow?.isVisible ?? false, !activeWindows.isEmpty else { return }
         
         if backward {
