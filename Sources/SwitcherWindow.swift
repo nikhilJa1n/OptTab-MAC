@@ -20,8 +20,15 @@ class SwitcherWindow: NSPanel {
         self.ignoresMouseEvents = false // Allow mouse interactions if the user wants to click a thumbnail
     }
     
-    func show(windows: [WindowInfo], currentIndex: Int) {
-        let rootView = SwitcherView(windows: windows, currentIndex: currentIndex)
+    func show(windows: [WindowInfo], currentIndex: Int, scale: Double, enableHoverSwitch: Bool, onHover: @escaping (Int) -> Void, onClick: @escaping (Int) -> Void) {
+        let rootView = SwitcherView(
+            windows: windows,
+            currentIndex: currentIndex,
+            scale: scale,
+            enableHoverSwitch: enableHoverSwitch,
+            onHoverIndex: onHover,
+            onClickIndex: onClick
+        )
         
         if let hosting = hostingView {
             hosting.rootView = rootView
@@ -41,8 +48,15 @@ class SwitcherWindow: NSPanel {
         self.makeKeyAndOrderFront(nil)
     }
     
-    func update(windows: [WindowInfo], currentIndex: Int) {
-        let rootView = SwitcherView(windows: windows, currentIndex: currentIndex)
+    func update(windows: [WindowInfo], currentIndex: Int, scale: Double, enableHoverSwitch: Bool, onHover: @escaping (Int) -> Void, onClick: @escaping (Int) -> Void) {
+        let rootView = SwitcherView(
+            windows: windows,
+            currentIndex: currentIndex,
+            scale: scale,
+            enableHoverSwitch: enableHoverSwitch,
+            onHoverIndex: onHover,
+            onClickIndex: onClick
+        )
         hostingView?.rootView = rootView
         
         if let documentView = self.contentView {

@@ -22,6 +22,10 @@ struct VisualEffectView: NSViewRepresentable {
 struct SwitcherView: View {
     let windows: [WindowInfo]
     let currentIndex: Int
+    let scale: Double
+    let enableHoverSwitch: Bool
+    let onHoverIndex: (Int) -> Void
+    let onClickIndex: (Int) -> Void
     
     var body: some View {
         VStack(spacing: 16) {
@@ -62,7 +66,11 @@ struct SwitcherView: View {
                         ForEach(0..<windows.count, id: \.self) { index in
                             WindowCard(
                                 window: windows[index],
-                                isSelected: index == currentIndex
+                                isSelected: index == currentIndex,
+                                scale: scale,
+                                enableHoverSwitch: enableHoverSwitch,
+                                onHover: { onHoverIndex(index) },
+                                onClick: { onClickIndex(index) }
                             )
                             .id(index)
                         }
@@ -84,7 +92,7 @@ struct SwitcherView: View {
                 .padding(.bottom, 4)
         }
         .padding(.vertical, 20)
-        .frame(minWidth: 400, maxWidth: 850)
+        .frame(minWidth: 400, maxWidth: CGFloat(850) * CGFloat(scale))
         .background(
             VisualEffectView(material: .hudWindow, blendingMode: .behindWindow)
                 .cornerRadius(24)
@@ -100,10 +108,17 @@ struct SwitcherView: View {
 struct WindowCard: View {
     let window: WindowInfo
     let isSelected: Bool
+    let scale: Double
+    let enableHoverSwitch: Bool
+    let onHover: () -> Void
+    let onClick: () -> Void
     
     @State private var thumbnail: NSImage? = nil
     
     var body: some View {
+        let cardWidth = 170.0 * scale
+        let cardHeight = 106.0 * scale
+        
         VStack(spacing: 10) {
             // Thumbnail Container
             ZStack {
@@ -111,7 +126,7 @@ struct WindowCard: View {
                     Image(nsImage: thumb)
                         .resizable()
                         .aspectRatio(contentMode: .fill)
-                        .frame(width: 170, height: 106)
+                        .frame(width: cardWidth, height: cardHeight)
                         .clipped()
                 } else {
                     // Fallback visual with beautiful dark gradient
@@ -120,14 +135,14 @@ struct WindowCard: View {
                         startPoint: .topLeading,
                         endPoint: .bottomTrailing
                     )
-                    .frame(width: 170, height: 106)
+                    .frame(width: cardWidth, height: cardHeight)
                     
                     if let icon = window.appIcon {
                         Image(nsImage: icon)
                             .resizable()
                             .aspectRatio(contentMode: .fit)
-                            .frame(width: 52, height: 52)
-                            .shadow(color: Color.black.opacity(0.4), radius: 6, x: 0, y: 3)
+                            .frame(width: 52 * scale, height: 52 * scale)
+                            .shadow(color: Color.black.opacity(0.4), radius: 6 * scale, x: 0, y: 3 * scale)
                     }
                 }
                 
@@ -139,18 +154,60 @@ struct WindowCard: View {
                             Image(nsImage: icon)
                                 .resizable()
                                 .aspectRatio(contentMode: .fit)
-                                .frame(width: 24, height: 24)
-                                .padding(4)
+                                .frame(width: 24 * scale, height: 24 * scale)
+                                .padding(4 * scale)
                                 .background(Color.black.opacity(0.5))
-                                .cornerRadius(6)
+                                .cornerRadius(6 * scale)
                                 .shadow(radius: 2)
                             Spacer()
                         }
                     }
-                    .padding(8)
+                    .padding(8 * scale)
+                }
+                
+                // Action Buttons capsule bar (Close, Minimize, Maximize, Force Quit)
+                if isSelected {
+                    VStack {
+                        HStack {
+                            Spacer()
+                            HStack(spacing: 6 * scale) {
+                                // Close (Red)
+                                ActionButton(icon: "xmark", color: .red, scale: scale) {
+                                    WindowList.performWindowAction(window: window, actionAttribute: kAXCloseButtonAttribute as CFString)
+                                    notifyActionTriggered()
+                                }
+                                
+                                // Minimize (Yellow)
+                                ActionButton(icon: "minus", color: .yellow, scale: scale) {
+                                    WindowList.performWindowAction(window: window, actionAttribute: kAXMinimizeButtonAttribute as CFString)
+                                    notifyActionTriggered()
+                                }
+                                
+                                // Zoom/Maximize (Green)
+                                ActionButton(icon: "arrow.up.left.and.arrow.down.right", color: .green, scale: scale) {
+                                    WindowList.performWindowAction(window: window, actionAttribute: kAXZoomButtonAttribute as CFString)
+                                }
+                                
+                                // Force Quit (Gray)
+                                ActionButton(icon: "power", color: .gray, scale: scale) {
+                                    WindowList.forceQuit(window: window)
+                                    notifyActionTriggered()
+                                }
+                            }
+                            .padding(5 * scale)
+                            .background(Color.black.opacity(0.75))
+                            .cornerRadius(10 * scale)
+                            .overlay(
+                                RoundedRectangle(cornerRadius: 10 * scale)
+                                    .stroke(Color.white.opacity(0.15), lineWidth: 1)
+                            )
+                            .padding(6 * scale)
+                        }
+                        Spacer()
+                    }
                 }
             }
-            .frame(width: 170, height: 106)
+            .frame(width: cardWidth, height: cardHeight)
             .cornerRadius(12)
             .overlay(
                 RoundedRectangle(cornerRadius: 12)
@@ -162,6 +219,14 @@ struct WindowCard: View {
             )
             .scaleEffect(isSelected ? 1.08 : 1.0)
             .animation(.spring(response: 0.25, dampingFraction: 0.7), value: isSelected)
+            .onHover { isHovered in
+                if isHovered && enableHoverSwitch && !isSelected {
+                    onHover()
+                }
+            }
+            .onTapGesture {
+                onClick()
+            }
             
             // App Details Text
             HStack(spacing: 6) {
@@ -169,7 +234,7 @@ struct WindowCard: View {
                     Image(nsImage: icon)
                         .resizable()
                         .aspectRatio(contentMode: .fit)
-                        .frame(width: 16, height: 16)
+                        .frame(width: 16 * scale, height: 16 * scale)
                 }
                 
                 Text(window.ownerName)
@@ -177,10 +242,16 @@ struct WindowCard: View {
                     .foregroundColor(isSelected ? .white : .white.opacity(0.7))
                     .lineLimit(1)
             }
-            .frame(width: 170)
+            .frame(width: cardWidth)
         }
         .onAppear {
             loadThumbnail()
+        }
+    }
+    
+    private func notifyActionTriggered() {
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.15) {
+            NotificationCenter.default.post(name: Notification.Name("windowActionTriggered"), object: nil)
         }
     }
     
@@ -193,6 +264,34 @@ struct WindowCard: View {
                     self.thumbnail = nsImage
                 }
             }
+        }
+    }
+}
+
+struct ActionButton: View {
+    let icon: String
+    let color: Color
+    let scale: Double
+    let action: () -> Void
+    
+    @State private var isHovered = false
+    
+    var body: some View {
+        Button(action: action) {
+            Circle()
+                .fill(isHovered ? color.opacity(0.95) : color.opacity(0.75))
+                .frame(width: 16 * scale, height: 16 * scale)
+                .overlay(
+                    Image(systemName: icon)
+                        .font(.system(size: 8 * scale, weight: .bold))
+                        .foregroundColor(.white)
+                )
+                .scaleEffect(isHovered ? 1.15 : 1.0)
+                .animation(.spring(response: 0.2, dampingFraction: 0.6), value: isHovered)
+        }
+        .buttonStyle(PlainButtonStyle())
+        .onHover { hovering in
+            isHovered = hovering
         }
     }
 }

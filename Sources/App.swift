@@ -37,11 +37,60 @@ class AppDelegate: NSObject, NSApplicationDelegate, HotkeyManagerDelegate {
             name: .accessibilityGranted,
             object: nil
         )
+        
+        // Observe window actions triggered from the UI
+        NotificationCenter.default.addObserver(
+            self,
+            selector: #selector(refreshActiveWindows),
+            name: Notification.Name("windowActionTriggered"),
+            object: nil
+        )
     }
     
     @objc func handleAccessibilityGranted() {
         print("[App] Accessibility permissions detected. Starting Hotkey Manager.")
         hotkeyManager?.start()
+    }
+    
+    @objc func refreshActiveWindows() {
+        activeWindows = WindowList.getWindows()
+        if activeWindows.isEmpty {
+            switcherWindow?.hide()
+        } else {
+            if currentIndex >= activeWindows.count {
+                currentIndex = activeWindows.count - 1
+            }
+            if currentIndex < 0 {
+                currentIndex = 0
+            }
+            switcherWindow?.update(
+                windows: activeWindows,
+                currentIndex: currentIndex,
+                scale: appState.thumbnailScale,
+                enableHoverSwitch: appState.enableHoverSwitch,
+                onHover: { [weak self] index in self?.handleHoverIndex(index) },
+                onClick: { [weak self] index in self?.handleClickIndex(index) }
+            )
+        }
+    }
+    
+    func handleHoverIndex(_ index: Int) {
+        guard index >= 0 && index < activeWindows.count else { return }
+        currentIndex = index
+        switcherWindow?.update(
+            windows: activeWindows,
+            currentIndex: currentIndex,
+            scale: appState.thumbnailScale,
+            enableHoverSwitch: appState.enableHoverSwitch,
+            onHover: { [weak self] i in self?.handleHoverIndex(i) },
+            onClick: { [weak self] i in self?.handleClickIndex(i) }
+        )
+    }
+    
+    func handleClickIndex(_ index: Int) {
+        guard index >= 0 && index < activeWindows.count else { return }
+        currentIndex = index
+        hotkeyOptionReleased()
     }
     
     func setupStatusBar() {
@@ -122,7 +171,14 @@ class AppDelegate: NSObject, NSApplicationDelegate, HotkeyManagerDelegate {
                 currentIndex = 0
             }
             
-            switcherWindow?.show(windows: activeWindows, currentIndex: currentIndex)
+            switcherWindow?.show(
+                windows: activeWindows,
+                currentIndex: currentIndex,
+                scale: appState.thumbnailScale,
+                enableHoverSwitch: appState.enableHoverSwitch,
+                onHover: { [weak self] index in self?.handleHoverIndex(index) },
+                onClick: { [weak self] index in self?.handleClickIndex(index) }
+            )
         } else {
             // Already open, cycle highlighted window index
             guard !activeWindows.isEmpty else { return }
@@ -139,7 +195,14 @@ class AppDelegate: NSObject, NSApplicationDelegate, HotkeyManagerDelegate {
                 }
             }
             
-            switcherWindow?.update(windows: activeWindows, currentIndex: currentIndex)
+            switcherWindow?.update(
+                windows: activeWindows,
+                currentIndex: currentIndex,
+                scale: appState.thumbnailScale,
+                enableHoverSwitch: appState.enableHoverSwitch,
+                onHover: { [weak self] index in self?.handleHoverIndex(index) },
+                onClick: { [weak self] index in self?.handleClickIndex(index) }
+            )
         }
     }
     
@@ -159,7 +222,42 @@ class AppDelegate: NSObject, NSApplicationDelegate, HotkeyManagerDelegate {
             }
         }
         
-        switcherWindow?.update(windows: activeWindows, currentIndex: currentIndex)
+        switcherWindow?.update(
+            windows: activeWindows,
+            currentIndex: currentIndex,
+            scale: appState.thumbnailScale,
+            enableHoverSwitch: appState.enableHoverSwitch,
+            onHover: { [weak self] index in self?.handleHoverIndex(index) },
+            onClick: { [weak self] index in self?.handleClickIndex(index) }
+        )
+    }
+    
+    func hotkeyWindowActionPressed(keyCode: Int) {
+        guard switcherWindow?.isVisible ?? false, currentIndex >= 0, currentIndex < activeWindows.count else { return }
+        
+        let target = activeWindows[currentIndex]
+        
+        switch keyCode {
+        case 13: // W - Close
+            WindowList.performWindowAction(window: target, actionAttribute: kAXCloseButtonAttribute as CFString)
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.15) { [weak self] in
+                self?.refreshActiveWindows()
+            }
+        case 46: // M - Minimize
+            WindowList.performWindowAction(window: target, actionAttribute: kAXMinimizeButtonAttribute as CFString)
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.15) { [weak self] in
+                self?.refreshActiveWindows()
+            }
+        case 3: // F - Maximize/Zoom
+            WindowList.performWindowAction(window: target, actionAttribute: kAXZoomButtonAttribute as CFString)
+        case 12: // Q - Force Quit App
+            WindowList.forceQuit(window: target)
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.15) { [weak self] in
+                self?.refreshActiveWindows()
+            }
+        default:
+            break
+        }
     }
     
     func hotkeyOptionReleased() {

@@ -9,15 +9,40 @@ class AppState: ObservableObject {
     @Published var isTabKeyPressed = false
     
     @Published var enableArrowNavigation: Bool {
-        didSet {
-            UserDefaults.standard.set(enableArrowNavigation, forKey: "enableArrowNavigation")
-        }
+        didSet { UserDefaults.standard.set(enableArrowNavigation, forKey: "enableArrowNavigation") }
+    }
+    
+    @Published var enableHoverSwitch: Bool {
+        didSet { UserDefaults.standard.set(enableHoverSwitch, forKey: "enableHoverSwitch") }
+    }
+    
+    @Published var thumbnailScale: Double {
+        didSet { UserDefaults.standard.set(thumbnailScale, forKey: "thumbnailScale") }
+    }
+    
+    @Published var showMinimized: Bool {
+        didSet { UserDefaults.standard.set(showMinimized, forKey: "showMinimized") }
+    }
+    
+    @Published var showAllSpaces: Bool {
+        didSet { UserDefaults.standard.set(showAllSpaces, forKey: "showAllSpaces") }
+    }
+    
+    @Published var windowSortOrder: String {
+        didSet { UserDefaults.standard.set(windowSortOrder, forKey: "windowSortOrder") }
     }
     
     private var timer: AnyCancellable?
     
     init() {
         self.enableArrowNavigation = UserDefaults.standard.object(forKey: "enableArrowNavigation") as? Bool ?? true
+        self.enableHoverSwitch = UserDefaults.standard.object(forKey: "enableHoverSwitch") as? Bool ?? false
+        let scaleVal = UserDefaults.standard.double(forKey: "thumbnailScale")
+        self.thumbnailScale = scaleVal == 0 ? 1.0 : scaleVal
+        self.showMinimized = UserDefaults.standard.object(forKey: "showMinimized") as? Bool ?? true
+        self.showAllSpaces = UserDefaults.standard.object(forKey: "showAllSpaces") as? Bool ?? false
+        self.windowSortOrder = UserDefaults.standard.string(forKey: "windowSortOrder") ?? "Recently Used"
+        
         checkPermissions()
         startPermissionPolling()
     }
@@ -232,31 +257,99 @@ struct PermissionsTab: View {
                     )
                     .padding(.top, 4)
                 }
-                
-                // Preferences toggle section
-                VStack(alignment: .leading, spacing: 12) {
-                    Text("Preferences")
+                               // Preferences & Behavior Section
+                VStack(alignment: .leading, spacing: 16) {
+                    Text("Preferences & Behavior")
                         .font(.system(size: 14, weight: .bold, design: .rounded))
                         .foregroundColor(.white)
                     
-                    Toggle(isOn: $state.enableArrowNavigation) {
-                        VStack(alignment: .leading, spacing: 2) {
-                            Text("Enable Arrow Key Navigation")
+                    VStack(alignment: .leading, spacing: 14) {
+                        // Arrow navigation toggle
+                        ToggleRow(
+                            title: "Enable Arrow Key Navigation",
+                            description: "Cycle through cards using Left (←) / Right (→) arrow keys.",
+                            isOn: $state.enableArrowNavigation
+                        )
+                        
+                        Divider()
+                        
+                        // Hover Selection Toggle
+                        ToggleRow(
+                            title: "Enable Mouse Hover Switch",
+                            description: "Highlight window cards automatically when hovering the mouse cursor.",
+                            isOn: $state.enableHoverSwitch
+                        )
+                        
+                        Divider()
+                        
+                        // Thumbnail Scaling Slider
+                        VStack(alignment: .leading, spacing: 6) {
+                            HStack {
+                                Text("Thumbnail Card Size")
+                                    .font(.system(size: 12, weight: .bold, design: .rounded))
+                                    .foregroundColor(.white)
+                                Spacer()
+                                Text(String(format: "%.0f%%", state.thumbnailScale * 100))
+                                    .font(.system(size: 11, weight: .semibold, design: .monospaced))
+                                    .foregroundColor(.blue)
+                            }
+                            
+                            Slider(value: $state.thumbnailScale, in: 0.7...1.4, step: 0.05)
+                                .accentColor(.blue)
+                        }
+                        
+                        Divider()
+                        
+                        // Filter Options
+                        VStack(alignment: .leading, spacing: 10) {
+                            Text("Workspace Filters")
                                 .font(.system(size: 12, weight: .bold, design: .rounded))
                                 .foregroundColor(.white)
-                            Text("Allows cycling through windows using Left (←) and Right (→) arrow keys.")
-                                .font(.system(size: 10, weight: .medium, design: .rounded))
-                                .foregroundColor(.white.opacity(0.55))
-                                .lineLimit(2)
+                            
+                            HStack(spacing: 20) {
+                                Toggle("Minimized Apps", isOn: $state.showMinimized)
+                                    .toggleStyle(CheckboxToggleStyle())
+                                    .font(.system(size: 11, weight: .medium))
+                                    .foregroundColor(.white.opacity(0.8))
+                                
+                                Toggle("All Desktop Spaces", isOn: $state.showAllSpaces)
+                                    .toggleStyle(CheckboxToggleStyle())
+                                    .font(.system(size: 11, weight: .medium))
+                                    .foregroundColor(.white.opacity(0.8))
+                            }
+                        }
+                        
+                        Divider()
+                        
+                        // Window Sorting Picker
+                        HStack {
+                            VStack(alignment: .leading, spacing: 2) {
+                                Text("Thumbnail Sort Order")
+                                    .font(.system(size: 12, weight: .bold, design: .rounded))
+                                    .foregroundColor(.white)
+                                Text("Determines the order cards appear in the HUD switcher.")
+                                    .font(.system(size: 10, weight: .regular, design: .rounded))
+                                    .foregroundColor(.white.opacity(0.55))
+                            }
+                            Spacer()
+                            Picker("", selection: $state.windowSortOrder) {
+                                Text("Recently Used").tag("Recently Used")
+                                    .font(.system(size: 11, weight: .medium))
+                                Text("App Name").tag("App Name")
+                                    .font(.system(size: 11, weight: .medium))
+                                Text("Window Title").tag("Window Title")
+                                    .font(.system(size: 11, weight: .medium))
+                            }
+                            .pickerStyle(MenuPickerStyle())
+                            .frame(width: 140)
                         }
                     }
-                    .toggleStyle(SwitchToggleStyle(tint: .blue))
                 }
-                .padding(12)
+                .padding(14)
                 .background(Color.white.opacity(0.04))
-                .cornerRadius(10)
+                .cornerRadius(12)
                 .overlay(
-                    RoundedRectangle(cornerRadius: 10)
+                    RoundedRectangle(cornerRadius: 12)
                         .stroke(Color.white.opacity(0.08), lineWidth: 1)
                 )
                 .padding(.top, 8)
@@ -440,5 +533,26 @@ struct HelpRow: View {
                 .padding(.top, 2)
                 .lineSpacing(2)
         }
+    }
+}
+
+struct ToggleRow: View {
+    let title: String
+    let description: String
+    @Binding var isOn: Bool
+    
+    var body: some View {
+        Toggle(isOn: $isOn) {
+            VStack(alignment: .leading, spacing: 2) {
+                Text(title)
+                    .font(.system(size: 12, weight: .bold, design: .rounded))
+                    .foregroundColor(.white)
+                Text(description)
+                    .font(.system(size: 10, weight: .medium, design: .rounded))
+                    .foregroundColor(.white.opacity(0.55))
+                    .lineLimit(2)
+            }
+        }
+        .toggleStyle(SwitchToggleStyle(tint: .blue))
     }
 }
