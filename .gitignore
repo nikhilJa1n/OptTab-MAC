@@ -1,0 +1,9 @@
+# macOS System Files
+.DS_Store
+
+# Swift Package Manager build products
+.build/
+.swiftpm/
+
+# Compiled App Bundle
+AdvancedDock.app/
