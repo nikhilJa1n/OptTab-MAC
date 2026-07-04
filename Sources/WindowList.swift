@@ -61,6 +61,17 @@ class WindowList {
                             }
                         }
                         
+                        // Check close and minimize buttons: standard windows must have close or minimize controls
+                        var closeButtonValue: AnyObject?
+                        let hasClose = AXUIElementCopyAttributeValue(axWindow, kAXCloseButtonAttribute as CFString, &closeButtonValue) == .success && closeButtonValue != nil
+                        
+                        var minimizeButtonValue: AnyObject?
+                        let hasMinimize = AXUIElementCopyAttributeValue(axWindow, kAXMinimizeButtonAttribute as CFString, &minimizeButtonValue) == .success && minimizeButtonValue != nil
+                        
+                        if !hasClose && !hasMinimize {
+                            continue
+                        }
+                        
                         if let id = getWindowID(from: axWindow) {
                             validAXWindowIDs.insert(id)
                         }
@@ -93,6 +104,12 @@ class WindowList {
                 continue
             }
             
+            // FILTER: Must have a non-empty, non-whitespace title (excludes empty helper/background layers)
+            let title = (info[kCGWindowName as String] as? String ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
+            if title.isEmpty {
+                continue
+            }
+            
             // FILTER: Only show regular user applications (exclude background helpers/agents)
             if let runningApp = NSRunningApplication(processIdentifier: pid) {
                 if runningApp.activationPolicy != .regular {
@@ -102,9 +119,22 @@ class WindowList {
                 continue
             }
             
-            // FILTER: Check if window ID is valid in the AX tree
-            if !validAXWindowIDs.contains(windowID) {
-                continue
+            let isOnscreen = info[kCGWindowIsOnscreen as String] as? Bool ?? false
+            
+            // FILTER: Check if window ID is valid in the AX tree, with fallback for other spaces
+            let isAXValid = validAXWindowIDs.contains(windowID)
+            if !isAXValid {
+                // Fallback for windows on other spaces (since accessibility kAXWindowsAttribute only returns current space windows)
+                if showAllSpaces && !isOnscreen {
+                    if let runningApp = NSRunningApplication(processIdentifier: pid),
+                       runningApp.activationPolicy == .regular {
+                        // Keep this window (on another space)
+                    } else {
+                        continue
+                    }
+                } else {
+                    continue
+                }
             }
             
             // Get owner Name (App Name)
@@ -119,9 +149,6 @@ class WindowList {
                 continue
             }
             
-            // Get window Title
-            let title = info[kCGWindowName as String] as? String ?? ""
-            
             // Get bounds
             guard let boundsDict = info[kCGWindowBounds as String] as? [String: Any],
                   let bounds = CGRect(dictionaryRepresentation: boundsDict as CFDictionary) else {
@@ -132,14 +159,6 @@ class WindowList {
             if bounds.width < 150 || bounds.height < 150 {
                 continue
             }
-            
-            // Filter out Finder desktop background window
-            if ownerName == "Finder" && title.isEmpty {
-                continue
-            }
-            
-            // Get on screen status
-            let isOnscreen = info[kCGWindowIsOnscreen as String] as? Bool ?? false
             
             // Space / minimized filter checks
             if !isOnscreen {
@@ -173,6 +192,19 @@ class WindowList {
             )
             windows.append(window)
         }
+        
+        // FILTER CO-LOCATED DUPLICATES: Remove windows that share the same PID, title, and exact screen bounds
+        var seenKeys = Set<String>()
+        var uniqueWindows: [WindowInfo] = []
+        for window in windows {
+            let key = "\(window.pid)-\(window.title)-\(Int(window.bounds.origin.x))-\(Int(window.bounds.origin.y))-\(Int(window.bounds.size.width))-\(Int(window.bounds.size.height))"
+            if seenKeys.contains(key) {
+                continue
+            }
+            seenKeys.insert(key)
+            uniqueWindows.append(window)
+        }
+        windows = uniqueWindows
         
         // SORTING: Sort windows dynamically based on preferences
         switch windowSortOrder {

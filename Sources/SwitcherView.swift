@@ -36,6 +36,12 @@ struct SwitcherView: View {
     }
     
     var body: some View {
+        let cardWidth = 170.0 * scale
+        let spacing = 20.0 * scale
+        let totalCardsWidth = cardWidth * Double(pageSize)
+        let totalSpacingWidth = spacing * Double(pageSize - 1)
+        let contentWidth = totalCardsWidth + totalSpacingWidth
+        
         VStack(spacing: 16) {
             // Selected Window Title Banner
             if currentIndex >= 0 && currentIndex < windows.count {
@@ -67,9 +73,10 @@ struct SwitcherView: View {
                 .frame(height: 44)
             }
             
-            // Paginated Container Box
+            // Paginated Container Box with stable dimensions
             VStack(spacing: 12) {
-                HStack(spacing: 20) {
+                HStack(spacing: CGFloat(spacing)) {
+                    Spacer()
                     let start = currentPage * pageSize
                     let end = min(start + pageSize, windows.count)
                     
@@ -84,13 +91,12 @@ struct SwitcherView: View {
                                 onHover: { onHoverIndex(index) },
                                 onClick: { onClickIndex(index) }
                             )
-                            // CRITICAL: Bind View identity to window.id to prevent cell reuse bugs (wrong thumbnails)
                             .id(window.id)
                         }
                     }
+                    Spacer()
                 }
-                .padding(.horizontal, 24)
-                .padding(.vertical, 12)
+                .frame(width: CGFloat(contentWidth))
                 
                 // Page Indicator Dots
                 let totalPages = Int(ceil(Double(windows.count) / Double(pageSize)))
@@ -104,10 +110,14 @@ struct SwitcherView: View {
                                 .animation(.spring(response: 0.25, dampingFraction: 0.7), value: currentPage)
                         }
                     }
-                    .padding(.bottom, 6)
+                    .frame(height: 10)
+                } else {
+                    // Spacer buffer when there is only 1 page to preserve vertical layout height
+                    Spacer()
+                        .frame(height: 10)
                 }
             }
-            .frame(height: 160 * scale, alignment: .center)
+            .frame(height: CGFloat(160 * scale + 15), alignment: .center)
             
             // Shortcut Help Footer
             Text("Release ⌥ (Option) to switch  •  Press ⎋ (Esc) to cancel")
@@ -116,8 +126,8 @@ struct SwitcherView: View {
                 .padding(.bottom, 4)
         }
         .padding(.vertical, 20)
-        // Keep maximum width constrained to the box page layout
-        .frame(minWidth: 400, maxWidth: CGFloat(950) * CGFloat(scale))
+        // Solid fixed width to prevent resizing jumps
+        .frame(width: CGFloat(contentWidth + 60))
         .background(
             VisualEffectView(material: .hudWindow, blendingMode: .behindWindow)
                 .cornerRadius(24)
@@ -151,7 +161,7 @@ struct WindowCard: View {
                     Image(nsImage: thumb)
                         .resizable()
                         .aspectRatio(contentMode: .fill)
-                        .frame(width: cardWidth, height: cardHeight)
+                        .frame(width: CGFloat(cardWidth), height: CGFloat(cardHeight))
                         .clipped()
                 } else {
                     // Fallback visual with beautiful dark gradient
@@ -160,14 +170,14 @@ struct WindowCard: View {
                         startPoint: .topLeading,
                         endPoint: .bottomTrailing
                     )
-                    .frame(width: cardWidth, height: cardHeight)
+                    .frame(width: CGFloat(cardWidth), height: CGFloat(cardHeight))
                     
                     if let icon = window.appIcon {
                         Image(nsImage: icon)
                             .resizable()
                             .aspectRatio(contentMode: .fit)
-                            .frame(width: 52 * scale, height: 52 * scale)
-                            .shadow(color: Color.black.opacity(0.4), radius: 6 * scale, x: 0, y: 3 * scale)
+                            .frame(width: CGFloat(52 * scale), height: CGFloat(52 * scale))
+                            .shadow(color: Color.black.opacity(0.4), radius: CGFloat(6 * scale), x: 0, y: CGFloat(3 * scale))
                     }
                 }
                 
@@ -179,15 +189,15 @@ struct WindowCard: View {
                             Image(nsImage: icon)
                                 .resizable()
                                 .aspectRatio(contentMode: .fit)
-                                .frame(width: 24 * scale, height: 24 * scale)
-                                .padding(4 * scale)
+                                .frame(width: CGFloat(24 * scale), height: CGFloat(24 * scale))
+                                .padding(CGFloat(4 * scale))
                                 .background(Color.black.opacity(0.5))
-                                .cornerRadius(6 * scale)
+                                .cornerRadius(CGFloat(6 * scale))
                                 .shadow(radius: 2)
                             Spacer()
                         }
                     }
-                    .padding(8 * scale)
+                    .padding(CGFloat(8 * scale))
                 }
                 
                 // Action Buttons capsule bar (Close, Minimize, Maximize, Force Quit)
@@ -195,7 +205,7 @@ struct WindowCard: View {
                     VStack {
                         HStack {
                             Spacer()
-                            HStack(spacing: 6 * scale) {
+                            HStack(spacing: CGFloat(6 * scale)) {
                                 // Close (Red)
                                 ActionButton(icon: "xmark", color: .red, scale: scale) {
                                     WindowList.performWindowAction(window: window, actionAttribute: kAXCloseButtonAttribute as CFString)
@@ -219,20 +229,20 @@ struct WindowCard: View {
                                     notifyActionTriggered()
                                 }
                             }
-                            .padding(5 * scale)
+                            .padding(CGFloat(5 * scale))
                             .background(Color.black.opacity(0.75))
-                            .cornerRadius(10 * scale)
+                            .cornerRadius(CGFloat(10 * scale))
                             .overlay(
-                                RoundedRectangle(cornerRadius: 10 * scale)
+                                RoundedRectangle(cornerRadius: CGFloat(10 * scale))
                                     .stroke(Color.white.opacity(0.15), lineWidth: 1)
                             )
-                            .padding(6 * scale)
+                            .padding(CGFloat(6 * scale))
                         }
                         Spacer()
                     }
                 }
             }
-            .frame(width: cardWidth, height: cardHeight)
+            .frame(width: CGFloat(cardWidth), height: CGFloat(cardHeight))
             .cornerRadius(12)
             .overlay(
                 RoundedRectangle(cornerRadius: 12)
@@ -259,7 +269,7 @@ struct WindowCard: View {
                     Image(nsImage: icon)
                         .resizable()
                         .aspectRatio(contentMode: .fit)
-                        .frame(width: 16 * scale, height: 16 * scale)
+                        .frame(width: CGFloat(16 * scale), height: CGFloat(16 * scale))
                 }
                 
                 Text(window.ownerName)
@@ -267,7 +277,7 @@ struct WindowCard: View {
                     .foregroundColor(isSelected ? .white : .white.opacity(0.7))
                     .lineLimit(1)
             }
-            .frame(width: cardWidth)
+            .frame(width: CGFloat(cardWidth))
         }
         .onAppear {
             loadThumbnail()
@@ -305,10 +315,10 @@ struct ActionButton: View {
         Button(action: action) {
             Circle()
                 .fill(isHovered ? color.opacity(0.95) : color.opacity(0.75))
-                .frame(width: 16 * scale, height: 16 * scale)
+                .frame(width: CGFloat(16 * scale), height: CGFloat(16 * scale))
                 .overlay(
                     Image(systemName: icon)
-                        .font(.system(size: 8 * scale, weight: .bold))
+                        .font(.system(size: CGFloat(8 * scale), weight: .bold))
                         .foregroundColor(.white)
                 )
                 .scaleEffect(isHovered ? 1.15 : 1.0)
