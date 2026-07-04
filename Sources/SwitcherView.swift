@@ -27,6 +27,14 @@ struct SwitcherView: View {
     let onHoverIndex: (Int) -> Void
     let onClickIndex: (Int) -> Void
     
+    // Contain thumbnails in boxes (pages) of size 5
+    let pageSize = 5
+    
+    var currentPage: Int {
+        guard !windows.isEmpty else { return 0 }
+        return currentIndex / pageSize
+    }
+    
     var body: some View {
         VStack(spacing: 16) {
             // Selected Window Title Banner
@@ -59,31 +67,47 @@ struct SwitcherView: View {
                 .frame(height: 44)
             }
             
-            // Horizontal list of windows
-            ScrollViewReader { proxy in
-                ScrollView(.horizontal, showsIndicators: false) {
-                    HStack(spacing: 20) {
-                        ForEach(0..<windows.count, id: \.self) { index in
+            // Paginated Container Box
+            VStack(spacing: 12) {
+                HStack(spacing: 20) {
+                    let start = currentPage * pageSize
+                    let end = min(start + pageSize, windows.count)
+                    
+                    if start < windows.count {
+                        ForEach(start..<end, id: \.self) { index in
+                            let window = windows[index]
                             WindowCard(
-                                window: windows[index],
+                                window: window,
                                 isSelected: index == currentIndex,
                                 scale: scale,
                                 enableHoverSwitch: enableHoverSwitch,
                                 onHover: { onHoverIndex(index) },
                                 onClick: { onClickIndex(index) }
                             )
-                            .id(index)
+                            // CRITICAL: Bind View identity to window.id to prevent cell reuse bugs (wrong thumbnails)
+                            .id(window.id)
                         }
                     }
-                    .padding(.horizontal, 24)
-                    .padding(.vertical, 12)
                 }
-                .onChange(of: currentIndex) { old, new in
-                    withAnimation(.spring(response: 0.3, dampingFraction: 0.75)) {
-                        proxy.scrollTo(new, anchor: .center)
+                .padding(.horizontal, 24)
+                .padding(.vertical, 12)
+                
+                // Page Indicator Dots
+                let totalPages = Int(ceil(Double(windows.count) / Double(pageSize)))
+                if totalPages > 1 {
+                    HStack(spacing: 8) {
+                        ForEach(0..<totalPages, id: \.self) { pageIndex in
+                            Circle()
+                                .fill(pageIndex == currentPage ? Color.blue : Color.white.opacity(0.3))
+                                .frame(width: 6, height: 6)
+                                .scaleEffect(pageIndex == currentPage ? 1.2 : 1.0)
+                                .animation(.spring(response: 0.25, dampingFraction: 0.7), value: currentPage)
+                        }
                     }
+                    .padding(.bottom, 6)
                 }
             }
+            .frame(height: 160 * scale, alignment: .center)
             
             // Shortcut Help Footer
             Text("Release ⌥ (Option) to switch  •  Press ⎋ (Esc) to cancel")
@@ -92,7 +116,8 @@ struct SwitcherView: View {
                 .padding(.bottom, 4)
         }
         .padding(.vertical, 20)
-        .frame(minWidth: 400, maxWidth: CGFloat(850) * CGFloat(scale))
+        // Keep maximum width constrained to the box page layout
+        .frame(minWidth: 400, maxWidth: CGFloat(950) * CGFloat(scale))
         .background(
             VisualEffectView(material: .hudWindow, blendingMode: .behindWindow)
                 .cornerRadius(24)

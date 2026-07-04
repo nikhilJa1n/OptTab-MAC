@@ -35,6 +35,40 @@ class WindowList {
             return []
         }
         
+        // Build set of valid window IDs using accessibility tree of regular applications
+        var validAXWindowIDs: Set<CGWindowID> = []
+        for app in NSWorkspace.shared.runningApplications {
+            if app.activationPolicy == .regular {
+                let appRef = AXUIElementCreateApplication(app.processIdentifier)
+                var windowsValue: AnyObject?
+                if AXUIElementCopyAttributeValue(appRef, kAXWindowsAttribute as CFString, &windowsValue) == .success,
+                   let axWindows = windowsValue as? [AXUIElement] {
+                    for axWindow in axWindows {
+                        // Check role: must be AXWindow
+                        var roleValue: AnyObject?
+                        if AXUIElementCopyAttributeValue(axWindow, kAXRoleAttribute as CFString, &roleValue) == .success,
+                           let role = roleValue as? String, role != kAXWindowRole {
+                            continue
+                        }
+                        
+                        // Check subrole: must be Standard, Dialog, or empty
+                        var subroleValue: AnyObject?
+                        if AXUIElementCopyAttributeValue(axWindow, kAXSubroleAttribute as CFString, &subroleValue) == .success,
+                           let subrole = subroleValue as? String {
+                            let allowed = (subrole == kAXStandardWindowSubrole || subrole == kAXDialogSubrole || subrole.isEmpty)
+                            if !allowed {
+                                continue
+                            }
+                        }
+                        
+                        if let id = getWindowID(from: axWindow) {
+                            validAXWindowIDs.insert(id)
+                        }
+                    }
+                }
+            }
+        }
+        
         var windows: [WindowInfo] = []
         let currentPid = ProcessInfo.processInfo.processIdentifier
         
@@ -65,6 +99,11 @@ class WindowList {
                     continue
                 }
             } else {
+                continue
+            }
+            
+            // FILTER: Check if window ID is valid in the AX tree
+            if !validAXWindowIDs.contains(windowID) {
                 continue
             }
             
