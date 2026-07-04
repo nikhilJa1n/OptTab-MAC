@@ -20,9 +20,19 @@ struct WindowInfo: Identifiable, Hashable {
 
 class WindowList {
     static func getWindows() -> [WindowInfo] {
+        // Gather onscreen Z-order rank from active space to sort raw lists in MRU order
+        var onscreenZOrder: [CGWindowID: Int] = [:]
+        let onscreenOptions = CGWindowListOption(arrayLiteral: .optionOnScreenOnly, .excludeDesktopElements)
+        if let onscreenList = CGWindowListCopyWindowInfo(onscreenOptions, kCGNullWindowID) as? [[String: Any]] {
+            for (index, info) in onscreenList.enumerated() {
+                if let windowID = info[kCGWindowNumber as String] as? CGWindowID {
+                    onscreenZOrder[windowID] = index
+                }
+            }
+        }
+        
         let showMinimized = UserDefaults.standard.object(forKey: "showMinimized") as? Bool ?? true
         let showAllSpaces = UserDefaults.standard.object(forKey: "showAllSpaces") as? Bool ?? false
-        let windowSortOrder = UserDefaults.standard.string(forKey: "windowSortOrder") ?? "Recently Used"
         
         let options: CGWindowListOption
         if showMinimized || showAllSpaces {
@@ -206,14 +216,14 @@ class WindowList {
         }
         windows = uniqueWindows
         
-        // SORTING: Sort windows dynamically based on preferences
-        switch windowSortOrder {
-        case "App Name":
-            windows.sort { $0.ownerName.localizedCaseInsensitiveCompare($1.ownerName) == .orderedAscending }
-        case "Window Title":
-            windows.sort { $0.title.localizedCaseInsensitiveCompare($1.title) == .orderedAscending }
-        default:
-            break
+        // SORT BY Z-ORDER RANK: Keep active space windows in MRU order, push other spaces/minimized to the end
+        windows.sort { (w1, w2) -> Bool in
+            let rank1 = onscreenZOrder[w1.id] ?? 999999
+            let rank2 = onscreenZOrder[w2.id] ?? 999999
+            if rank1 != rank2 {
+                return rank1 < rank2
+            }
+            return false
         }
         
         return windows

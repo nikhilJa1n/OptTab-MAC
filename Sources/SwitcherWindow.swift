@@ -20,12 +20,14 @@ class SwitcherWindow: NSPanel {
         self.ignoresMouseEvents = false // Allow mouse interactions if the user wants to click a thumbnail
     }
     
-    func show(windows: [WindowInfo], currentIndex: Int, scale: Double, enableHoverSwitch: Bool, onHover: @escaping (Int) -> Void, onClick: @escaping (Int) -> Void) {
+    func show(windows: [WindowInfo], currentIndex: Int, scale: Double, enableHoverSwitch: Bool, gridRows: Int, gridCols: Int, onHover: @escaping (Int) -> Void, onClick: @escaping (Int) -> Void) {
         let rootView = SwitcherView(
             windows: windows,
             currentIndex: currentIndex,
             scale: scale,
             enableHoverSwitch: enableHoverSwitch,
+            gridRows: gridRows,
+            gridCols: gridCols,
             onHoverIndex: onHover,
             onClickIndex: onClick
         )
@@ -48,12 +50,14 @@ class SwitcherWindow: NSPanel {
         self.makeKeyAndOrderFront(nil)
     }
     
-    func update(windows: [WindowInfo], currentIndex: Int, scale: Double, enableHoverSwitch: Bool, onHover: @escaping (Int) -> Void, onClick: @escaping (Int) -> Void) {
+    func update(windows: [WindowInfo], currentIndex: Int, scale: Double, enableHoverSwitch: Bool, gridRows: Int, gridCols: Int, onHover: @escaping (Int) -> Void, onClick: @escaping (Int) -> Void) {
         let rootView = SwitcherView(
             windows: windows,
             currentIndex: currentIndex,
             scale: scale,
             enableHoverSwitch: enableHoverSwitch,
+            gridRows: gridRows,
+            gridCols: gridCols,
             onHoverIndex: onHover,
             onClickIndex: onClick
         )

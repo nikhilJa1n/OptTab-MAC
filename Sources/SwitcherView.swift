@@ -24,11 +24,14 @@ struct SwitcherView: View {
     let currentIndex: Int
     let scale: Double
     let enableHoverSwitch: Bool
+    let gridRows: Int
+    let gridCols: Int
     let onHoverIndex: (Int) -> Void
     let onClickIndex: (Int) -> Void
     
-    // Contain thumbnails in boxes (pages) of size 5
-    let pageSize = 5
+    var pageSize: Int {
+        return gridRows * gridCols
+    }
     
     var currentPage: Int {
         guard !windows.isEmpty else { return 0 }
@@ -38,9 +41,12 @@ struct SwitcherView: View {
     var body: some View {
         let cardWidth = 170.0 * scale
         let spacing = 20.0 * scale
-        let totalCardsWidth = cardWidth * Double(pageSize)
-        let totalSpacingWidth = spacing * Double(pageSize - 1)
+        let totalCardsWidth = cardWidth * Double(gridCols)
+        let totalSpacingWidth = spacing * Double(gridCols - 1)
         let contentWidth = totalCardsWidth + totalSpacingWidth
+        
+        let cardTotalHeight = 132.0 * scale // 106 height + 10 spacing + 16 text
+        let gridHeight = (cardTotalHeight * Double(gridRows)) + (spacing * Double(gridRows - 1))
         
         VStack(spacing: 16) {
             // Selected Window Title Banner
@@ -75,26 +81,35 @@ struct SwitcherView: View {
             
             // Paginated Container Box with stable dimensions
             VStack(spacing: 12) {
-                HStack(spacing: CGFloat(spacing)) {
-                    Spacer()
+                VStack(spacing: CGFloat(spacing)) {
                     let start = currentPage * pageSize
                     let end = min(start + pageSize, windows.count)
                     
-                    if start < windows.count {
-                        ForEach(start..<end, id: \.self) { index in
-                            let window = windows[index]
-                            WindowCard(
-                                window: window,
-                                isSelected: index == currentIndex,
-                                scale: scale,
-                                enableHoverSwitch: enableHoverSwitch,
-                                onHover: { onHoverIndex(index) },
-                                onClick: { onClickIndex(index) }
-                            )
-                            .id(window.id)
+                    ForEach(0..<gridRows, id: \.self) { row in
+                        HStack(spacing: CGFloat(spacing)) {
+                            Spacer()
+                            ForEach(0..<gridCols, id: \.self) { col in
+                                let cardIndex = start + (row * gridCols) + col
+                                if cardIndex < end {
+                                    let window = windows[cardIndex]
+                                    WindowCard(
+                                        window: window,
+                                        isSelected: cardIndex == currentIndex,
+                                        scale: scale,
+                                        enableHoverSwitch: enableHoverSwitch,
+                                        onHover: { onHoverIndex(cardIndex) },
+                                        onClick: { onClickIndex(cardIndex) }
+                                    )
+                                    .id(window.id)
+                                } else {
+                                    // Empty slot filler to keep standard card bounds
+                                    Color.clear
+                                        .frame(width: CGFloat(cardWidth), height: CGFloat(cardTotalHeight))
+                                }
+                            }
+                            Spacer()
                         }
                     }
-                    Spacer()
                 }
                 .frame(width: CGFloat(contentWidth))
                 
@@ -112,12 +127,11 @@ struct SwitcherView: View {
                     }
                     .frame(height: 10)
                 } else {
-                    // Spacer buffer when there is only 1 page to preserve vertical layout height
-                    Spacer()
+                    Color.clear
                         .frame(height: 10)
                 }
             }
-            .frame(height: CGFloat(160 * scale + 15), alignment: .center)
+            .frame(height: CGFloat(gridHeight + 15), alignment: .center)
             
             // Shortcut Help Footer
             Text("Release ⌥ (Option) to switch  •  Press ⎋ (Esc) to cancel")

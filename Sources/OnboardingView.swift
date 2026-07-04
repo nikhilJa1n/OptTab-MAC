@@ -32,6 +32,14 @@ class AppState: ObservableObject {
         didSet { UserDefaults.standard.set(windowSortOrder, forKey: "windowSortOrder") }
     }
     
+    @Published var gridRows: Int {
+        didSet { UserDefaults.standard.set(gridRows, forKey: "gridRows") }
+    }
+    
+    @Published var gridCols: Int {
+        didSet { UserDefaults.standard.set(gridCols, forKey: "gridCols") }
+    }
+    
     private var timer: AnyCancellable?
     
     init() {
@@ -42,6 +50,11 @@ class AppState: ObservableObject {
         self.showMinimized = UserDefaults.standard.object(forKey: "showMinimized") as? Bool ?? true
         self.showAllSpaces = UserDefaults.standard.object(forKey: "showAllSpaces") as? Bool ?? false
         self.windowSortOrder = UserDefaults.standard.string(forKey: "windowSortOrder") ?? "Recently Used"
+        
+        let rowsVal = UserDefaults.standard.integer(forKey: "gridRows")
+        self.gridRows = rowsVal == 0 ? 1 : rowsVal
+        let colsVal = UserDefaults.standard.integer(forKey: "gridCols")
+        self.gridCols = colsVal == 0 ? 5 : colsVal
         
         checkPermissions()
         startPermissionPolling()
@@ -342,6 +355,42 @@ struct PermissionsTab: View {
                             }
                             .pickerStyle(MenuPickerStyle())
                             .frame(width: 140)
+                        }
+                        
+                        Divider()
+                        
+                        // Grid Dimensions Picker
+                        HStack {
+                            VStack(alignment: .leading, spacing: 2) {
+                                Text("Grid Layout (Rows x Columns)")
+                                    .font(.system(size: 12, weight: .bold, design: .rounded))
+                                    .foregroundColor(.white)
+                                Text("Configure how many rows and columns show per page.")
+                                    .font(.system(size: 10, weight: .regular, design: .rounded))
+                                    .foregroundColor(.white.opacity(0.55))
+                            }
+                            Spacer()
+                            HStack(spacing: 8) {
+                                Picker("Rows", selection: $state.gridRows) {
+                                    ForEach(1...3, id: \.self) { r in
+                                        Text("\(r) Row\(r > 1 ? "s" : "")").tag(r)
+                                    }
+                                }
+                                .pickerStyle(MenuPickerStyle())
+                                .frame(width: 85)
+                                
+                                Text("x")
+                                    .font(.system(size: 12, weight: .bold))
+                                    .foregroundColor(.white.opacity(0.4))
+                                
+                                Picker("Cols", selection: $state.gridCols) {
+                                    ForEach(3...6, id: \.self) { c in
+                                        Text("\(c) Col\(c > 1 ? "s" : "")").tag(c)
+                                    }
+                                }
+                                .pickerStyle(MenuPickerStyle())
+                                .frame(width: 85)
+                            }
                         }
                     }
                 }

@@ -13,6 +13,10 @@ class AppDelegate: NSObject, NSApplicationDelegate, HotkeyManagerDelegate {
     var currentIndex: Int = 0
     
     func applicationDidFinishLaunching(_ notification: Notification) {
+        // Disable stdout buffering for diagnostic logging
+        setbuf(stdout, nil)
+        setbuf(stderr, nil)
+        
         // Initialize state and check permissions
         appState.checkPermissions()
         
@@ -52,10 +56,90 @@ class AppDelegate: NSObject, NSApplicationDelegate, HotkeyManagerDelegate {
         hotkeyManager?.start()
     }
     
+    
+    func logMessage(_ msg: String) {
+        let logPath = "/Users/nikhiljain/.gemini/antigravity/brain/feb90e27-a96e-4b36-8783-aee805b013b9/scratch/sorting_test.log"
+        let fileManager = FileManager.default
+        let formattedMsg = "\(Date()): \(msg)\n"
+        if let data = formattedMsg.data(using: .utf8) {
+            if fileManager.fileExists(atPath: logPath) {
+                if let fileHandle = FileHandle(forWritingAtPath: logPath) {
+                    fileHandle.seekToEndOfFile()
+                    fileHandle.write(data)
+                    fileHandle.closeFile()
+                }
+            } else {
+                try? data.write(to: URL(fileURLWithPath: logPath))
+            }
+        }
+    }
+    
+    func getSortedWindowsAndIndex(backward: Bool) -> ([WindowInfo], Int) {
+        let rawWindows = WindowList.getWindows()
+        guard !rawWindows.isEmpty else { return ([], 0) }
+        
+        // Z-order index 1 is the previously active window
+        let previouslyActiveWindowID = rawWindows.count > 1 ? rawWindows[1].id : rawWindows[0].id
+        
+        var sortedWindows = rawWindows
+        let windowSortOrder = appState.windowSortOrder
+        
+        logMessage("Sorting request. Preference: '\(windowSortOrder)'")
+        logMessage("  - Raw: " + rawWindows.map { "\($0.ownerName):\($0.title)" }.joined(separator: ", "))
+        
+        switch windowSortOrder {
+        case "App Name":
+            sortedWindows.sort { $0.ownerName.localizedCaseInsensitiveCompare($1.ownerName) == .orderedAscending }
+        case "Window Title":
+            sortedWindows.sort { $0.title.localizedCaseInsensitiveCompare($1.title) == .orderedAscending }
+        default:
+            break
+        }
+        
+        logMessage("  - Sorted: " + sortedWindows.map { "\($0.ownerName):\($0.title)" }.joined(separator: ", "))
+        
+        var targetIndex = 0
+        if let idx = sortedWindows.firstIndex(where: { $0.id == previouslyActiveWindowID }) {
+            targetIndex = idx
+        }
+        
+        if backward && sortedWindows.count > 1 {
+            targetIndex = sortedWindows.count - 1
+        }
+        
+        return (sortedWindows, targetIndex)
+    }
+    
     @objc func refreshActiveWindows() {
-        activeWindows = WindowList.getWindows()
-        if activeWindows.isEmpty {
+        let previousSelectedID = (currentIndex >= 0 && currentIndex < activeWindows.count) ? activeWindows[currentIndex].id : nil
+        
+        let rawWindows = WindowList.getWindows()
+        if rawWindows.isEmpty {
+            activeWindows = []
             switcherWindow?.hide()
+            return
+        }
+        
+        var sortedWindows = rawWindows
+        let windowSortOrder = appState.windowSortOrder
+        logMessage("Refresh active windows request. Preference: '\(windowSortOrder)'")
+        logMessage("  - Raw: " + rawWindows.map { "\($0.ownerName):\($0.title)" }.joined(separator: ", "))
+        
+        switch windowSortOrder {
+        case "App Name":
+            sortedWindows.sort { $0.ownerName.localizedCaseInsensitiveCompare($1.ownerName) == .orderedAscending }
+        case "Window Title":
+            sortedWindows.sort { $0.title.localizedCaseInsensitiveCompare($1.title) == .orderedAscending }
+        default:
+            break
+        }
+        
+        logMessage("  - Sorted: " + sortedWindows.map { "\($0.ownerName):\($0.title)" }.joined(separator: ", "))
+        
+        activeWindows = sortedWindows
+        
+        if let prevID = previousSelectedID, let newIndex = activeWindows.firstIndex(where: { $0.id == prevID }) {
+            currentIndex = newIndex
         } else {
             if currentIndex >= activeWindows.count {
                 currentIndex = activeWindows.count - 1
@@ -63,15 +147,18 @@ class AppDelegate: NSObject, NSApplicationDelegate, HotkeyManagerDelegate {
             if currentIndex < 0 {
                 currentIndex = 0
             }
-            switcherWindow?.update(
-                windows: activeWindows,
-                currentIndex: currentIndex,
-                scale: appState.thumbnailScale,
-                enableHoverSwitch: appState.enableHoverSwitch,
-                onHover: { [weak self] index in self?.handleHoverIndex(index) },
-                onClick: { [weak self] index in self?.handleClickIndex(index) }
-            )
         }
+        
+        switcherWindow?.update(
+            windows: activeWindows,
+            currentIndex: currentIndex,
+            scale: appState.thumbnailScale,
+            enableHoverSwitch: appState.enableHoverSwitch,
+            gridRows: appState.gridRows,
+            gridCols: appState.gridCols,
+            onHover: { [weak self] index in self?.handleHoverIndex(index) },
+            onClick: { [weak self] index in self?.handleClickIndex(index) }
+        )
     }
     
     func handleHoverIndex(_ index: Int) {
@@ -82,6 +169,8 @@ class AppDelegate: NSObject, NSApplicationDelegate, HotkeyManagerDelegate {
             currentIndex: currentIndex,
             scale: appState.thumbnailScale,
             enableHoverSwitch: appState.enableHoverSwitch,
+            gridRows: appState.gridRows,
+            gridCols: appState.gridCols,
             onHover: { [weak self] i in self?.handleHoverIndex(i) },
             onClick: { [weak self] i in self?.handleClickIndex(i) }
         )
@@ -160,22 +249,19 @@ class AppDelegate: NSObject, NSApplicationDelegate, HotkeyManagerDelegate {
         }
         
         if !(switcherWindow?.isVisible ?? false) {
-            // Gather active windows
-            activeWindows = WindowList.getWindows()
+            let (sorted, targetIdx) = getSortedWindowsAndIndex(backward: backward)
+            activeWindows = sorted
             guard !activeWindows.isEmpty else { return }
             
-            // Select appropriate index: standard alt-tab cycles to index 1 (the previous active app)
-            if activeWindows.count > 1 {
-                currentIndex = backward ? (activeWindows.count - 1) : 1
-            } else {
-                currentIndex = 0
-            }
+            currentIndex = targetIdx
             
             switcherWindow?.show(
                 windows: activeWindows,
                 currentIndex: currentIndex,
                 scale: appState.thumbnailScale,
                 enableHoverSwitch: appState.enableHoverSwitch,
+                gridRows: appState.gridRows,
+                gridCols: appState.gridCols,
                 onHover: { [weak self] index in self?.handleHoverIndex(index) },
                 onClick: { [weak self] index in self?.handleClickIndex(index) }
             )
@@ -200,6 +286,8 @@ class AppDelegate: NSObject, NSApplicationDelegate, HotkeyManagerDelegate {
                 currentIndex: currentIndex,
                 scale: appState.thumbnailScale,
                 enableHoverSwitch: appState.enableHoverSwitch,
+                gridRows: appState.gridRows,
+                gridCols: appState.gridCols,
                 onHover: { [weak self] index in self?.handleHoverIndex(index) },
                 onClick: { [weak self] index in self?.handleClickIndex(index) }
             )
@@ -227,6 +315,8 @@ class AppDelegate: NSObject, NSApplicationDelegate, HotkeyManagerDelegate {
             currentIndex: currentIndex,
             scale: appState.thumbnailScale,
             enableHoverSwitch: appState.enableHoverSwitch,
+            gridRows: appState.gridRows,
+            gridCols: appState.gridCols,
             onHover: { [weak self] index in self?.handleHoverIndex(index) },
             onClick: { [weak self] index in self?.handleClickIndex(index) }
         )
