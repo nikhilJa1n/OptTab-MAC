@@ -40,6 +40,10 @@ class AppState: ObservableObject {
         didSet { UserDefaults.standard.set(gridCols, forKey: "gridCols") }
     }
     
+    @Published var enableDockHoverPreviews: Bool {
+        didSet { UserDefaults.standard.set(enableDockHoverPreviews, forKey: "enableDockHoverPreviews") }
+    }
+    
     private var timer: AnyCancellable?
     
     init() {
@@ -55,6 +59,7 @@ class AppState: ObservableObject {
         self.gridRows = rowsVal == 0 ? 1 : rowsVal
         let colsVal = UserDefaults.standard.integer(forKey: "gridCols")
         self.gridCols = colsVal == 0 ? 5 : colsVal
+        self.enableDockHoverPreviews = UserDefaults.standard.object(forKey: "enableDockHoverPreviews") as? Bool ?? true
         
         checkPermissions()
         startPermissionPolling()
@@ -313,9 +318,9 @@ struct PermissionsTab: View {
                         
                         Divider()
                         
-                        // Filter Options
+                        // Filter & Preview Options
                         VStack(alignment: .leading, spacing: 10) {
-                            Text("Workspace Filters")
+                            Text("Workspace & Dock Options")
                                 .font(.system(size: 12, weight: .bold, design: .rounded))
                                 .foregroundColor(.white)
                             
@@ -330,6 +335,11 @@ struct PermissionsTab: View {
                                     .font(.system(size: 11, weight: .medium))
                                     .foregroundColor(.white.opacity(0.8))
                             }
+                            
+                            Toggle("Enable Dock Hover Previews", isOn: $state.enableDockHoverPreviews)
+                                .toggleStyle(CheckboxToggleStyle())
+                                .font(.system(size: 11, weight: .medium))
+                                .foregroundColor(.white.opacity(0.8))
                         }
                         
                         Divider()

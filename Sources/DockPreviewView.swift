@@ -8,7 +8,15 @@ struct DockPreviewView: View {
     let onClose: (WindowInfo) -> Void
     
     var body: some View {
-        HStack(spacing: 12) {
+        let cardWidth = 160.0 * scale
+        let cardHeight = 100.0 * scale
+        let spacing = 12.0
+        let padding = 10.0
+        
+        let totalWidth = cardWidth * Double(windows.count) + spacing * Double(max(0, windows.count - 1)) + padding * 2
+        let totalHeight = cardHeight + 35.0 // Card height + title/spacing + padding
+        
+        HStack(spacing: spacing) {
             ForEach(windows) { window in
                 DockPreviewCard(
                     window: window,
@@ -18,7 +26,8 @@ struct DockPreviewView: View {
                 )
             }
         }
-        .padding(10)
+        .padding(padding)
+        .frame(width: totalWidth, height: totalHeight)
         .background(
             VisualEffectView(material: .hudWindow, blendingMode: .behindWindow)
                 .clipShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
@@ -47,28 +56,47 @@ struct DockPreviewCard: View {
             ZStack {
                 // Thumbnail container
                 ZStack {
-                    Color.black.opacity(0.3)
-                    
                     if let img = thumbnail {
                         Image(nsImage: img)
                             .resizable()
-                            .aspectRatio(contentMode: .fit)
-                            .frame(maxWidth: cardWidth - 8, maxHeight: cardHeight - 8)
+                            .aspectRatio(contentMode: .fill)
+                            .frame(width: cardWidth, height: cardHeight)
+                            .clipped()
                     } else {
-                        // Fallback icon
+                        // Fallback background with beautiful dark gradient
+                        LinearGradient(
+                            colors: [Color(nsColor: .darkGray).opacity(0.6), Color(nsColor: .black).opacity(0.8)],
+                            startPoint: .topLeading,
+                            endPoint: .bottomTrailing
+                        )
+                        .frame(width: cardWidth, height: cardHeight)
+                        
                         if let icon = window.appIcon {
                             Image(nsImage: icon)
                                 .resizable()
                                 .aspectRatio(contentMode: .fit)
-                                .frame(width: 40, height: 40)
-                                .opacity(0.3)
-                        } else {
-                            Image(systemName: "window.rectangle")
-                                .resizable()
-                                .aspectRatio(contentMode: .fit)
-                                .frame(width: 40, height: 40)
-                                .foregroundColor(.white.opacity(0.2))
+                                .frame(width: CGFloat(40 * scale), height: CGFloat(40 * scale))
+                                .shadow(color: Color.black.opacity(0.4), radius: CGFloat(4 * scale), x: 0, y: CGFloat(2 * scale))
                         }
+                    }
+                    
+                    // Small App Icon badge in bottom-left corner of thumbnail
+                    if thumbnail != nil, let icon = window.appIcon {
+                        VStack {
+                            Spacer()
+                            HStack {
+                                Image(nsImage: icon)
+                                    .resizable()
+                                    .aspectRatio(contentMode: .fit)
+                                    .frame(width: CGFloat(20 * scale), height: CGFloat(20 * scale))
+                                    .padding(CGFloat(3 * scale))
+                                    .background(Color.black.opacity(0.5))
+                                    .cornerRadius(5)
+                                    .shadow(radius: 1)
+                                Spacer()
+                            }
+                        }
+                        .padding(8)
                     }
                 }
                 .frame(width: cardWidth, height: cardHeight)
@@ -76,7 +104,7 @@ struct DockPreviewCard: View {
                 .cornerRadius(8)
                 .overlay(
                     RoundedRectangle(cornerRadius: 8)
-                        .stroke(isHovered ? Color.blue.opacity(0.8) : Color.white.opacity(0.1), lineWidth: 1.5)
+                        .stroke(isHovered ? Color.blue.opacity(0.8) : Color.white.opacity(0.12), lineWidth: 1.5)
                 )
                 
                 // Close button overlay on hover
@@ -88,12 +116,13 @@ struct DockPreviewCard: View {
                                 Image(systemName: "xmark")
                                     .font(.system(size: 8, weight: .bold))
                                     .foregroundColor(.white)
-                                    .frame(width: 16, height: 16)
-                                    .background(Color.red.opacity(0.8))
+                                    .frame(width: 18, height: 18)
+                                    .background(Color.red.opacity(0.85))
                                     .clipShape(Circle())
+                                    .shadow(color: Color.black.opacity(0.3), radius: 2)
                             }
                             .buttonStyle(PlainButtonStyle())
-                            .padding(4)
+                            .padding(6)
                         }
                         Spacer()
                     }

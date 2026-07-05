@@ -44,7 +44,7 @@ class DockPreviewWindow: NSPanel {
                 // Refresh list after close animation/action settles
                 DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) { [weak self] in
                     guard let self = self else { return }
-                    let freshWindows = WindowList.getWindows().filter { $0.ownerName == appName }
+                    let freshWindows = WindowList.getWindows(showAllSpacesOverride: true, showMinimizedOverride: true).filter { $0.ownerName == appName }
                     self.update(windows: freshWindows, appName: appName, dockItemFrame: dockItemFrame, scale: scale)
                 }
             }
@@ -61,11 +61,13 @@ class DockPreviewWindow: NSPanel {
         // Recalculate frame to wrap around SwiftUI's intrinsic content size
         if let documentView = self.contentView {
             let fittingSize = documentView.fittingSize
+            logMessage("[DockPreviewWindow] fittingSize width=\(fittingSize.width) height=\(fittingSize.height)")
             self.setContentSize(fittingSize)
         }
         
         // Position window relative to dock item frame and dock position
         positionWindow(dockItemFrame: dockItemFrame)
+        logMessage("[DockPreviewWindow] Showing at origin=(\(self.frame.origin.x), \(self.frame.origin.y)) size=(\(self.frame.size.width), \(self.frame.size.height))")
         
         self.makeKeyAndOrderFront(nil)
     }
@@ -94,7 +96,7 @@ class DockPreviewWindow: NSPanel {
                 // Refresh list after close animation/action settles
                 DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) { [weak self] in
                     guard let self = self else { return }
-                    let freshWindows = WindowList.getWindows().filter { $0.ownerName == appName }
+                    let freshWindows = WindowList.getWindows(showAllSpacesOverride: true, showMinimizedOverride: true).filter { $0.ownerName == appName }
                     self.update(windows: freshWindows, appName: appName, dockItemFrame: dockItemFrame, scale: scale)
                 }
             }
@@ -104,13 +106,16 @@ class DockPreviewWindow: NSPanel {
         
         if let documentView = self.contentView {
             let fittingSize = documentView.fittingSize
+            logMessage("[DockPreviewWindow] update fittingSize width=\(fittingSize.width) height=\(fittingSize.height)")
             self.setContentSize(fittingSize)
         }
         
         positionWindow(dockItemFrame: dockItemFrame)
+        logMessage("[DockPreviewWindow] Updated at origin=(\(self.frame.origin.x), \(self.frame.origin.y)) size=(\(self.frame.size.width), \(self.frame.size.height))")
     }
     
     func hide() {
+        logMessage("[DockPreviewWindow] Hiding")
         self.orderOut(nil)
     }
     
@@ -151,5 +156,21 @@ class DockPreviewWindow: NSPanel {
         }
         
         self.setFrameOrigin(NSPoint(x: x, y: y))
+    }
+    
+    private func logMessage(_ msg: String) {
+        let logPath = "/Users/nikhiljain/.gemini/antigravity/brain/feb90e27-a96e-4b36-8783-aee805b013b9/scratch/action_debug.log"
+        let formattedMsg = "\(Date()): \(msg)\n"
+        if let data = formattedMsg.data(using: .utf8) {
+            if FileManager.default.fileExists(atPath: logPath) {
+                if let fh = FileHandle(forWritingAtPath: logPath) {
+                    fh.seekToEndOfFile()
+                    fh.write(data)
+                    fh.closeFile()
+                }
+            } else {
+                try? data.write(to: URL(fileURLWithPath: logPath))
+            }
+        }
     }
 }

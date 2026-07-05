@@ -18,12 +18,11 @@ class DockHoverMonitor {
     }
     
     func start() {
+        logMessage("[DockHoverMonitor] starting")
         guard timer == nil else { return }
         
-        // Find Dock process once at start
         findDockPID()
         
-        // Poll at 10Hz (every 100ms) for lightweight, low-CPU monitoring
         timer = Timer.scheduledTimer(withTimeInterval: 0.1, repeats: true) { [weak self] _ in
             self?.checkMousePosition()
         }
@@ -38,6 +37,9 @@ class DockHoverMonitor {
     private func findDockPID() {
         if let dockApp = NSRunningApplication.runningApplications(withBundleIdentifier: "com.apple.dock").first {
             activeDockPID = dockApp.processIdentifier
+            logMessage("[DockHoverMonitor] Found Dock app, PID=\(activeDockPID!)")
+        } else {
+            logMessage("[DockHoverMonitor] Dock app not found!")
         }
     }
     
@@ -114,6 +116,7 @@ class DockHoverMonitor {
         
         if let item = hoveredItem {
             if currentHoveredApp != item.title {
+                logMessage("[DockHoverMonitor] Hovered app changed to '\(item.title)'")
                 currentHoveredApp = item.title
                 // Convert frame to Cocoa coordinates for window positioning
                 let cocoaFrame = CGRect(
@@ -132,8 +135,25 @@ class DockHoverMonitor {
             }
             
             if currentHoveredApp != nil {
+                logMessage("[DockHoverMonitor] Hover dismissed (currentHoveredApp was '\(currentHoveredApp!)')")
                 currentHoveredApp = nil
                 delegate?.dockHoverMonitorDidDismiss()
+            }
+        }
+    }
+    
+    private func logMessage(_ msg: String) {
+        let logPath = "/Users/nikhiljain/.gemini/antigravity/brain/feb90e27-a96e-4b36-8783-aee805b013b9/scratch/action_debug.log"
+        let formattedMsg = "\(Date()): \(msg)\n"
+        if let data = formattedMsg.data(using: .utf8) {
+            if FileManager.default.fileExists(atPath: logPath) {
+                if let fh = FileHandle(forWritingAtPath: logPath) {
+                    fh.seekToEndOfFile()
+                    fh.write(data)
+                    fh.closeFile()
+                }
+            } else {
+                try? data.write(to: URL(fileURLWithPath: logPath))
             }
         }
     }

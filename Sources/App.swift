@@ -1,5 +1,6 @@
 import Cocoa
 import SwiftUI
+import Combine
 
 class AppDelegate: NSObject, NSApplicationDelegate, HotkeyManagerDelegate {
     var appState = AppState()
@@ -11,6 +12,7 @@ class AppDelegate: NSObject, NSApplicationDelegate, HotkeyManagerDelegate {
     // Dock Hover Previews
     var dockHoverMonitor: DockHoverMonitor?
     var dockPreviewWindow: DockPreviewWindow?
+    private var cancellables = Set<AnyCancellable>()
     
     // Switcher state
     var activeWindows: [WindowInfo] = []
@@ -42,10 +44,22 @@ class AppDelegate: NSObject, NSApplicationDelegate, HotkeyManagerDelegate {
         hotkeyManager = HotkeyManager(delegate: self)
         if appState.isAccessibilityGranted {
             hotkeyManager?.start()
-            dockHoverMonitor?.start()
         } else {
             showOnboarding()
         }
+        
+        // Observe toggle changes in settings dynamically
+        appState.$enableDockHoverPreviews
+            .sink { [weak self] enabled in
+                guard let self = self else { return }
+                if enabled && self.appState.isAccessibilityGranted {
+                    self.dockHoverMonitor?.start()
+                } else {
+                    self.dockHoverMonitor?.stop()
+                    self.dockPreviewWindow?.hide()
+                }
+            }
+            .store(in: &cancellables)
         
         // Setup Status Bar Item
         setupStatusBar()
@@ -144,7 +158,9 @@ class AppDelegate: NSObject, NSApplicationDelegate, HotkeyManagerDelegate {
     @objc func handleAccessibilityGranted() {
         print("[App] Accessibility permissions detected. Starting Hotkey Manager and Dock Monitor.")
         hotkeyManager?.start()
-        dockHoverMonitor?.start()
+        if appState.enableDockHoverPreviews {
+            dockHoverMonitor?.start()
+        }
     }
     
     
@@ -533,7 +549,7 @@ extension AppDelegate: DockHoverMonitorDelegate {
         // Only show previews if the main switcher window is not visible to avoid clutter
         guard !(switcherWindow?.isVisible ?? false) else { return }
         
-        let allWindows = WindowList.getWindows()
+        let allWindows = WindowList.getWindows(showAllSpacesOverride: true, showMinimizedOverride: true)
         let matchingWindows = allWindows.filter { $0.ownerName == appName }
         
         guard !matchingWindows.isEmpty else {

@@ -19,7 +19,7 @@ struct WindowInfo: Identifiable, Hashable {
 }
 
 class WindowList {
-    static func getWindows() -> [WindowInfo] {
+    static func getWindows(showAllSpacesOverride: Bool? = nil, showMinimizedOverride: Bool? = nil) -> [WindowInfo] {
         // Gather onscreen Z-order rank from active space to sort raw lists in MRU order
         var onscreenZOrder: [CGWindowID: Int] = [:]
         let onscreenOptions = CGWindowListOption(arrayLiteral: .optionOnScreenOnly, .excludeDesktopElements)
@@ -31,8 +31,8 @@ class WindowList {
             }
         }
         
-        let showMinimized = UserDefaults.standard.object(forKey: "showMinimized") as? Bool ?? true
-        let showAllSpaces = UserDefaults.standard.object(forKey: "showAllSpaces") as? Bool ?? false
+        let showMinimized = showMinimizedOverride ?? (UserDefaults.standard.object(forKey: "showMinimized") as? Bool ?? true)
+        let showAllSpaces = showAllSpacesOverride ?? (UserDefaults.standard.object(forKey: "showAllSpaces") as? Bool ?? false)
         
         let options: CGWindowListOption
         if showMinimized || showAllSpaces {
@@ -114,9 +114,15 @@ class WindowList {
                 continue
             }
             
-            // FILTER: Must have a non-empty, non-whitespace title (excludes empty helper/background layers)
-            let title = (info[kCGWindowName as String] as? String ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
-            if title.isEmpty {
+            // Get owner Name (App Name)
+            let ownerName = info[kCGWindowOwnerName as String] as? String ?? ""
+            if ownerName.isEmpty {
+                continue
+            }
+            
+            // Filter out common background/system overlays
+            let systemApps = ["Dock", "SystemUIServer", "WindowServer", "NotificationCenter", "ControlCenter", "Wallpaper", "Siri", "Spotlight", "TextInputMenuAgent", "TextInputSwitcher"]
+            if systemApps.contains(ownerName) {
                 continue
             }
             
@@ -131,38 +137,37 @@ class WindowList {
             
             let isOnscreen = info[kCGWindowIsOnscreen as String] as? Bool ?? false
             
-            // FILTER: Check if window ID is valid in the AX tree, with fallback for other spaces
-            let isAXValid = validAXWindowIDs.contains(windowID)
-            if !isAXValid {
-                // Fallback for windows on other spaces (since accessibility kAXWindowsAttribute only returns current space windows)
-                if showAllSpaces && !isOnscreen {
-                    if let runningApp = NSRunningApplication(processIdentifier: pid),
-                       runningApp.activationPolicy == .regular {
-                        // Keep this window (on another space)
-                    } else {
-                        continue
+            // Get bounds
+            guard let boundsDict = info[kCGWindowBounds as String] as? [String: Any],
+                  let bounds = CGRect(dictionaryRepresentation: boundsDict as CFDictionary) else {
+                continue
+            }
+            
+            // FILTER: Must have a non-empty, non-whitespace title (excludes empty helper/background layers)
+            var title = (info[kCGWindowName as String] as? String ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
+            if title.isEmpty {
+                // Keep empty titles only if we are querying other spaces (showAllSpaces is true) or if the window is minimized.
+                let minimized = !isOnscreen && isWindowMinimized(pid: pid, windowID: windowID)
+                if showAllSpaces || (minimized && showMinimized) {
+                    // For windows on other spaces (showAllSpaces is true), filter out small helper windows by requiring a large size.
+                    if !minimized {
+                        if bounds.width < 800 || bounds.height < 600 {
+                            continue
+                        }
                     }
+                    title = ownerName
                 } else {
                     continue
                 }
             }
             
-            // Get owner Name (App Name)
-            let ownerName = info[kCGWindowOwnerName as String] as? String ?? ""
-            if ownerName.isEmpty {
-                continue
-            }
-            
-            // Filter out common background/system overlays
-            let systemApps = ["Dock", "SystemUIServer", "WindowServer", "NotificationCenter", "ControlCenter", "Wallpaper", "Siri", "Spotlight", "TextInputMenuAgent", "TextInputSwitcher"]
-            if systemApps.contains(ownerName) {
-                continue
-            }
-            
-            // Get bounds
-            guard let boundsDict = info[kCGWindowBounds as String] as? [String: Any],
-                  let bounds = CGRect(dictionaryRepresentation: boundsDict as CFDictionary) else {
-                continue
+            // FILTER: Check if window ID is valid in the AX tree, with fallback for other spaces
+            let isAXValid = validAXWindowIDs.contains(windowID)
+            if !isAXValid {
+                // If showAllSpaces is true, we keep any regular app window
+                if !showAllSpaces {
+                    continue
+                }
             }
             
             // Filter out extremely small windows (icons, small widgets, status items)
@@ -190,6 +195,9 @@ class WindowList {
             var appIcon: NSImage? = nil
             if let runningApp = NSRunningApplication(processIdentifier: pid) {
                 appIcon = runningApp.icon
+            }
+            if appIcon == nil {
+                appIcon = NSWorkspace.shared.icon(for: .application)
             }
             
             let window = WindowInfo(
