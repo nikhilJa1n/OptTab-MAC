@@ -10,9 +10,13 @@ APP_DIR="${APP_NAME}.app"
 
 # Create directories
 mkdir -p "${APP_DIR}/Contents/MacOS"
+mkdir -p "${APP_DIR}/Contents/Resources"
 
-# Copy binary
+# Copy binary & resources
 cp ".build/release/${APP_NAME}" "${APP_DIR}/Contents/MacOS/${APP_NAME}"
+if [ -f "AppIcon.icns" ]; then
+    cp AppIcon.icns "${APP_DIR}/Contents/Resources/AppIcon.icns"
+fi
 
 # Create Info.plist
 cat > "${APP_DIR}/Contents/Info.plist" <<EOF
@@ -24,6 +28,8 @@ cat > "${APP_DIR}/Contents/Info.plist" <<EOF
     <string>en</string>
     <key>CFBundleExecutable</key>
     <string>${APP_NAME}</string>
+    <key>CFBundleIconFile</key>
+    <string>AppIcon.icns</string>
     <key>CFBundleIdentifier</key>
     <string>com.nikhiljain.AdvancedDock</string>
     <key>CFBundleInfoDictionaryVersion</key>
