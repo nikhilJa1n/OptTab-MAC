@@ -629,6 +629,12 @@ class AppDelegate: NSObject, NSApplicationDelegate, HotkeyManagerDelegate {
     }
     
     func updateMRUWithActiveWindow() {
+        // Don't track our own switcher window
+        if let frontmostApp = NSWorkspace.shared.frontmostApplication,
+           frontmostApp.processIdentifier == ProcessInfo.processInfo.processIdentifier {
+            return
+        }
+        
         guard let activeID = WindowList.getActiveWindowID() else { return }
         
         // Focus transition protection:

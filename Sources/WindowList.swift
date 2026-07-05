@@ -45,45 +45,71 @@ class WindowList {
             return []
         }
         
-        // Build set of valid window IDs using accessibility tree of regular applications
+        // Build set of valid window IDs and cache titles using accessibility tree of regular applications
         var validAXWindowIDs: Set<CGWindowID> = []
+        var axWindowTitles: [CGWindowID: String] = [:]
         for app in NSWorkspace.shared.runningApplications {
             if app.activationPolicy == .regular {
                 let appRef = AXUIElementCreateApplication(app.processIdentifier)
+                
+                var axElements: [AXUIElement] = []
+                
                 var windowsValue: AnyObject?
                 if AXUIElementCopyAttributeValue(appRef, kAXWindowsAttribute as CFString, &windowsValue) == .success,
                    let axWindows = windowsValue as? [AXUIElement] {
-                    for axWindow in axWindows {
-                        // Check role: must be AXWindow
-                        var roleValue: AnyObject?
-                        if AXUIElementCopyAttributeValue(axWindow, kAXRoleAttribute as CFString, &roleValue) == .success,
-                           let role = roleValue as? String, role != kAXWindowRole {
+                    axElements.append(contentsOf: axWindows)
+                }
+                
+                var childrenValue: AnyObject?
+                if AXUIElementCopyAttributeValue(appRef, kAXChildrenAttribute as CFString, &childrenValue) == .success,
+                   let axChildren = childrenValue as? [AXUIElement] {
+                    axElements.append(contentsOf: axChildren)
+                }
+                
+                for axWindow in axElements {
+                    // Check role: must be AXWindow
+                    var roleValue: AnyObject?
+                    if AXUIElementCopyAttributeValue(axWindow, kAXRoleAttribute as CFString, &roleValue) == .success,
+                       let role = roleValue as? String, role != kAXWindowRole {
+                        continue
+                    }
+                    
+                    // Check subrole: must be Standard, Dialog, SystemDialog, FloatingWindow, or empty
+                    var subroleValue: AnyObject?
+                    if AXUIElementCopyAttributeValue(axWindow, kAXSubroleAttribute as CFString, &subroleValue) == .success,
+                       let subrole = subroleValue as? String {
+                        let allowed = (subrole == kAXStandardWindowSubrole || 
+                                       subrole == kAXDialogSubrole || 
+                                       subrole == "AXSystemDialog" ||
+                                       subrole == "AXFloatingWindow" ||
+                                       subrole.isEmpty)
+                        if !allowed {
                             continue
                         }
+                    }
+                    
+                    // Check close and minimize buttons: standard windows must have close or minimize controls
+                    var closeButtonValue: AnyObject?
+                    let hasClose = AXUIElementCopyAttributeValue(axWindow, kAXCloseButtonAttribute as CFString, &closeButtonValue) == .success && closeButtonValue != nil
+                    
+                    var minimizeButtonValue: AnyObject?
+                    let hasMinimize = AXUIElementCopyAttributeValue(axWindow, kAXMinimizeButtonAttribute as CFString, &minimizeButtonValue) == .success && minimizeButtonValue != nil
+                    
+                    if !hasClose && !hasMinimize {
+                        continue
+                    }
+                    
+                    if let id = getWindowID(from: axWindow) {
+                        validAXWindowIDs.insert(id)
                         
-                        // Check subrole: must be Standard, Dialog, or empty
-                        var subroleValue: AnyObject?
-                        if AXUIElementCopyAttributeValue(axWindow, kAXSubroleAttribute as CFString, &subroleValue) == .success,
-                           let subrole = subroleValue as? String {
-                            let allowed = (subrole == kAXStandardWindowSubrole || subrole == kAXDialogSubrole || subrole.isEmpty)
-                            if !allowed {
-                                continue
+                        // Retrieve title from AX
+                        var titleValue: AnyObject?
+                        if AXUIElementCopyAttributeValue(axWindow, kAXTitleAttribute as CFString, &titleValue) == .success,
+                           let titleStr = titleValue as? String {
+                            let trimmed = titleStr.trimmingCharacters(in: .whitespacesAndNewlines)
+                            if !trimmed.isEmpty {
+                                axWindowTitles[id] = trimmed
                             }
-                        }
-                        
-                        // Check close and minimize buttons: standard windows must have close or minimize controls
-                        var closeButtonValue: AnyObject?
-                        let hasClose = AXUIElementCopyAttributeValue(axWindow, kAXCloseButtonAttribute as CFString, &closeButtonValue) == .success && closeButtonValue != nil
-                        
-                        var minimizeButtonValue: AnyObject?
-                        let hasMinimize = AXUIElementCopyAttributeValue(axWindow, kAXMinimizeButtonAttribute as CFString, &minimizeButtonValue) == .success && minimizeButtonValue != nil
-                        
-                        if !hasClose && !hasMinimize {
-                            continue
-                        }
-                        
-                        if let id = getWindowID(from: axWindow) {
-                            validAXWindowIDs.insert(id)
                         }
                     }
                 }
@@ -143,30 +169,38 @@ class WindowList {
                 continue
             }
             
-            // FILTER: Must have a non-empty, non-whitespace title (excludes empty helper/background layers)
-            var title = (info[kCGWindowName as String] as? String ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
-            if title.isEmpty {
-                // Keep empty titles only if we are querying other spaces (showAllSpaces is true) or if the window is minimized.
-                let minimized = !isOnscreen && isWindowMinimized(pid: pid, windowID: windowID)
-                if showAllSpaces || (minimized && showMinimized) {
-                    // For windows on other spaces (showAllSpaces is true), filter out small helper windows by requiring a large size.
-                    if !minimized {
-                        if bounds.width < 800 || bounds.height < 600 {
-                            continue
-                        }
-                    }
-                    title = ownerName
-                } else {
-                    continue
-                }
-            }
-            
             // FILTER: Check if window ID is valid in the AX tree, with fallback for other spaces
             let isAXValid = validAXWindowIDs.contains(windowID)
             if !isAXValid {
                 // If showAllSpaces is true, we keep any regular app window
                 if !showAllSpaces {
                     continue
+                }
+            }
+            
+            // FILTER: Must have a non-empty, non-whitespace title (excludes empty helper/background layers)
+            var title = (info[kCGWindowName as String] as? String ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
+            if title.isEmpty, let axTitle = axWindowTitles[windowID] {
+                title = axTitle
+            }
+            
+            if title.isEmpty {
+                if isAXValid {
+                    title = ownerName
+                } else {
+                    // Keep empty titles only if we are querying other spaces (showAllSpaces is true) or if the window is minimized.
+                    let minimized = !isOnscreen && isWindowMinimized(pid: pid, windowID: windowID)
+                    if showAllSpaces || (minimized && showMinimized) {
+                        // For windows on other spaces (showAllSpaces is true), filter out small helper windows by requiring a large size.
+                        if !minimized {
+                            if bounds.width < 800 || bounds.height < 600 {
+                                continue
+                            }
+                        }
+                        title = ownerName
+                    } else {
+                        continue
+                    }
                 }
             }
             
@@ -421,10 +455,24 @@ class WindowList {
         guard let frontmostApp = NSWorkspace.shared.frontmostApplication else { return nil }
         let appRef = AXUIElementCreateApplication(frontmostApp.processIdentifier)
         var windowValue: AnyObject?
-        guard AXUIElementCopyAttributeValue(appRef, kAXFocusedWindowAttribute as CFString, &windowValue) == .success else {
-            return nil
+        if AXUIElementCopyAttributeValue(appRef, kAXFocusedWindowAttribute as CFString, &windowValue) == .success {
+            if let id = getWindowID(from: windowValue as! AXUIElement) {
+                return id
+            }
         }
-        return getWindowID(from: windowValue as! AXUIElement)
+        
+        // Fallback: search CGWindowList for the topmost window of the frontmost application
+        let options = CGWindowListOption(arrayLiteral: .optionOnScreenOnly, .excludeDesktopElements)
+        if let windowList = CGWindowListCopyWindowInfo(options, kCGNullWindowID) as? [[String: Any]] {
+            for info in windowList {
+                guard let layer = info[kCGWindowLayer as String] as? Int, layer == 0 else { continue }
+                guard let pid = info[kCGWindowOwnerPID as String] as? pid_t, pid == frontmostApp.processIdentifier else { continue }
+                if let windowID = info[kCGWindowNumber as String] as? CGWindowID {
+                    return windowID
+                }
+            }
+        }
+        return nil
     }
     
     static func resizeWindow(window: WindowInfo, action: String) {
