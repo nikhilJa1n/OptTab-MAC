@@ -18,6 +18,9 @@ class AppDelegate: NSObject, NSApplicationDelegate, HotkeyManagerDelegate {
     var activeWindows: [WindowInfo] = []
     var currentIndex: Int = 0
     var mruWindowIDs: [CGWindowID] = []
+    var lastRaisedWindowID: CGWindowID?
+    var previousActiveWindowIDBeforeSwitch: CGWindowID?
+    var lastRaisedTime: Date = Date.distantPast
     
     func applicationDidFinishLaunching(_ notification: Notification) {
         // Disable stdout buffering for diagnostic logging
@@ -179,8 +182,11 @@ class AppDelegate: NSObject, NSApplicationDelegate, HotkeyManagerDelegate {
         if switcherWindow?.isVisible ?? false {
             if currentIndex >= 0 && currentIndex < activeWindows.count {
                 let target = activeWindows[currentIndex]
+                previousActiveWindowIDBeforeSwitch = mruWindowIDs.first
                 mruWindowIDs.removeAll(where: { $0 == target.id })
                 mruWindowIDs.insert(target.id, at: 0)
+                lastRaisedWindowID = target.id
+                lastRaisedTime = Date()
                 WindowList.raiseWindow(window: target)
             }
             switcherWindow?.hide()
@@ -250,8 +256,19 @@ class AppDelegate: NSObject, NSApplicationDelegate, HotkeyManagerDelegate {
         let rawWindows = WindowList.getWindows()
         guard !rawWindows.isEmpty else { return ([], 0) }
         
-        // Z-order index 1 is the previously active window
-        let previouslyActiveWindowID = rawWindows.count > 1 ? rawWindows[1].id : rawWindows[0].id
+        // Determine previously active window ID using internal MRU list if available
+        var previouslyActiveWindowID: CGWindowID?
+        if mruWindowIDs.count > 1 {
+            for id in mruWindowIDs.dropFirst() {
+                if rawWindows.contains(where: { $0.id == id }) {
+                    previouslyActiveWindowID = id
+                    break
+                }
+            }
+        }
+        if previouslyActiveWindowID == nil {
+            previouslyActiveWindowID = rawWindows.count > 1 ? rawWindows[1].id : rawWindows[0].id
+        }
         
         var sortedWindows = sortWindows(rawWindows)
         
@@ -571,8 +588,11 @@ class AppDelegate: NSObject, NSApplicationDelegate, HotkeyManagerDelegate {
             
             if currentIndex >= 0 && currentIndex < activeWindows.count {
                 let target = activeWindows[currentIndex]
+                previousActiveWindowIDBeforeSwitch = mruWindowIDs.first
                 mruWindowIDs.removeAll(where: { $0 == target.id })
                 mruWindowIDs.insert(target.id, at: 0)
+                lastRaisedWindowID = target.id
+                lastRaisedTime = Date()
                 WindowList.raiseWindow(window: target)
             }
             
@@ -609,10 +629,20 @@ class AppDelegate: NSObject, NSApplicationDelegate, HotkeyManagerDelegate {
     }
     
     func updateMRUWithActiveWindow() {
-        if let activeID = WindowList.getActiveWindowID() {
-            mruWindowIDs.removeAll(where: { $0 == activeID })
-            mruWindowIDs.insert(activeID, at: 0)
+        guard let activeID = WindowList.getActiveWindowID() else { return }
+        
+        // Focus transition protection:
+        // If we recently raised a window and the OS reports the stale old active window ID,
+        // ignore it to prevent MRU list corruption.
+        if Date().timeIntervalSince(lastRaisedTime) < 0.5 {
+            if let staleID = previousActiveWindowIDBeforeSwitch, activeID == staleID {
+                logMessage("[updateMRUWithActiveWindow] OS reported stale active ID \(activeID) (lag detected, ignoring)")
+                return
+            }
         }
+        
+        mruWindowIDs.removeAll(where: { $0 == activeID })
+        mruWindowIDs.insert(activeID, at: 0)
     }
 }
 

@@ -70,12 +70,12 @@ class HotkeyManager {
         
         if type == .flagsChanged {
             DispatchQueue.main.async { [weak self] in
-                self?.delegate?.hotkeyFlagsChanged(isOptionPressed: isOptionPressed)
-            }
-            // Option released while switcher is active -> commit selection
-            if !isOptionPressed && (delegate?.isSwitcherVisible() ?? false) {
-                DispatchQueue.main.async { [weak self] in
-                    self?.delegate?.hotkeyOptionReleased()
+                guard let self = self else { return }
+                self.delegate?.hotkeyFlagsChanged(isOptionPressed: isOptionPressed)
+                
+                // Option released while switcher is active -> commit selection
+                if !isOptionPressed && (self.delegate?.isSwitcherVisible() ?? false) {
+                    self.delegate?.hotkeyOptionReleased()
                 }
             }
         } else if type == .keyDown {
