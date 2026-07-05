@@ -11,7 +11,7 @@ class UpdateChecker {
     static let shared = UpdateChecker()
     
     // Raw GitHub URL for the hosted update JSON file
-    private let updateURLString = "https://raw.githubusercontent.com/nikhiljain/AdvancedDock/main/update.json"
+    private let updateURLString = "https://raw.githubusercontent.com/nikhilJa1n/Advanced-Dock/main/update.json"
     
     func checkForUpdates(verbose: Bool = false) {
         guard let url = URL(string: updateURLString) else { return }
