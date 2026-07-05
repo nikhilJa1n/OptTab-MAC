@@ -61,6 +61,14 @@ class AppDelegate: NSObject, NSApplicationDelegate, HotkeyManagerDelegate {
             }
             .store(in: &cancellables)
         
+        // Observe search query and app filter changes to update switcher list dynamically
+        Publishers.CombineLatest(appState.$searchQuery, appState.$selectedAppFilter)
+            .sink { [weak self] _, _ in
+                guard let self = self, self.isSwitcherVisible() else { return }
+                self.refreshActiveWindows()
+            }
+            .store(in: &cancellables)
+        
         // Setup Status Bar Item
         setupStatusBar()
         
@@ -77,6 +85,13 @@ class AppDelegate: NSObject, NSApplicationDelegate, HotkeyManagerDelegate {
             self,
             selector: #selector(handleWindowAction(_:)),
             name: Notification.Name("performWindowAction"),
+            object: nil
+        )
+        
+        NotificationCenter.default.addObserver(
+            self,
+            selector: #selector(commitSelection),
+            name: Notification.Name("commitSwitcherSelection"),
             object: nil
         )
         
@@ -155,6 +170,21 @@ class AppDelegate: NSObject, NSApplicationDelegate, HotkeyManagerDelegate {
         }
     }
     
+    @objc func commitSelection() {
+        if switcherWindow?.isVisible ?? false {
+            if currentIndex >= 0 && currentIndex < activeWindows.count {
+                let target = activeWindows[currentIndex]
+                mruWindowIDs.removeAll(where: { $0 == target.id })
+                mruWindowIDs.insert(target.id, at: 0)
+                WindowList.raiseWindow(window: target)
+            }
+            switcherWindow?.hide()
+            appState.searchQuery = ""
+            appState.selectedAppFilter = nil
+            appState.isSearchActive = false
+        }
+    }
+    
     @objc func handleAccessibilityGranted() {
         print("[App] Accessibility permissions detected. Starting Hotkey Manager and Dock Monitor.")
         hotkeyManager?.start()
@@ -218,9 +248,23 @@ class AppDelegate: NSObject, NSApplicationDelegate, HotkeyManagerDelegate {
         // Z-order index 1 is the previously active window
         let previouslyActiveWindowID = rawWindows.count > 1 ? rawWindows[1].id : rawWindows[0].id
         
-        let sortedWindows = sortWindows(rawWindows)
-        let windowSortOrder = appState.windowSortOrder
+        var sortedWindows = sortWindows(rawWindows)
         
+        // Apply App Filter
+        if let filter = appState.selectedAppFilter {
+            sortedWindows = sortedWindows.filter { WindowList.appMatches(window: $0, appName: filter) }
+        }
+        
+        // Apply Search Filter
+        let query = appState.searchQuery.trimmingCharacters(in: .whitespacesAndNewlines)
+        if !query.isEmpty {
+            sortedWindows = sortedWindows.filter {
+                $0.title.localizedCaseInsensitiveContains(query) ||
+                $0.ownerName.localizedCaseInsensitiveContains(query)
+            }
+        }
+        
+        let windowSortOrder = appState.windowSortOrder
         logMessage("Sorting request. Preference: '\(windowSortOrder)'")
         logMessage("  - Raw: " + rawWindows.map { "\($0.ownerName):\($0.title)" }.joined(separator: ", "))
         logMessage("  - Sorted: " + sortedWindows.map { "\($0.ownerName):\($0.title)" }.joined(separator: ", "))
@@ -236,7 +280,7 @@ class AppDelegate: NSObject, NSApplicationDelegate, HotkeyManagerDelegate {
         
         return (sortedWindows, targetIndex)
     }
-    
+
     @objc func refreshActiveWindows() {
         let previousSelectedID = (currentIndex >= 0 && currentIndex < activeWindows.count) ? activeWindows[currentIndex].id : nil
         
@@ -244,10 +288,27 @@ class AppDelegate: NSObject, NSApplicationDelegate, HotkeyManagerDelegate {
         if rawWindows.isEmpty {
             activeWindows = []
             switcherWindow?.hide()
+            appState.searchQuery = ""
+            appState.selectedAppFilter = nil
             return
         }
         
-        let sortedWindows = sortWindows(rawWindows)
+        var sortedWindows = sortWindows(rawWindows)
+        
+        // Apply App Filter
+        if let filter = appState.selectedAppFilter {
+            sortedWindows = sortedWindows.filter { WindowList.appMatches(window: $0, appName: filter) }
+        }
+        
+        // Apply Search Filter
+        let query = appState.searchQuery.trimmingCharacters(in: .whitespacesAndNewlines)
+        if !query.isEmpty {
+            sortedWindows = sortedWindows.filter {
+                $0.title.localizedCaseInsensitiveContains(query) ||
+                $0.ownerName.localizedCaseInsensitiveContains(query)
+            }
+        }
+        
         let windowSortOrder = appState.windowSortOrder
         logMessage("Refresh active windows request. Preference: '\(windowSortOrder)'")
         logMessage("  - Raw: " + rawWindows.map { "\($0.ownerName):\($0.title)" }.joined(separator: ", "))
@@ -258,30 +319,17 @@ class AppDelegate: NSObject, NSApplicationDelegate, HotkeyManagerDelegate {
         if let prevID = previousSelectedID, let newIndex = activeWindows.firstIndex(where: { $0.id == prevID }) {
             currentIndex = newIndex
         } else {
-            if currentIndex >= activeWindows.count {
-                currentIndex = activeWindows.count - 1
-            }
-            if currentIndex < 0 {
-                currentIndex = 0
-            }
+            currentIndex = 0
         }
         
-        switcherWindow?.update(
-            windows: activeWindows,
-            currentIndex: currentIndex,
-            scale: appState.thumbnailScale,
-            enableHoverSwitch: appState.enableHoverSwitch,
-            gridRows: appState.gridRows,
-            gridCols: appState.gridCols,
-            onHover: { [weak self] index in self?.handleHoverIndex(index) },
-            onClick: { [weak self] index in self?.handleClickIndex(index) }
-        )
+        updateSwitcherView()
     }
     
     func handleHoverIndex(_ index: Int) {
         guard index >= 0 && index < activeWindows.count else { return }
         currentIndex = index
         switcherWindow?.update(
+            appState: appState,
             windows: activeWindows,
             currentIndex: currentIndex,
             scale: appState.thumbnailScale,
@@ -377,6 +425,7 @@ class AppDelegate: NSObject, NSApplicationDelegate, HotkeyManagerDelegate {
             currentIndex = targetIdx
             
             switcherWindow?.show(
+                appState: appState,
                 windows: activeWindows,
                 currentIndex: currentIndex,
                 scale: appState.thumbnailScale,
@@ -403,6 +452,7 @@ class AppDelegate: NSObject, NSApplicationDelegate, HotkeyManagerDelegate {
             }
             
             switcherWindow?.update(
+                appState: appState,
                 windows: activeWindows,
                 currentIndex: currentIndex,
                 scale: appState.thumbnailScale,
@@ -463,6 +513,7 @@ class AppDelegate: NSObject, NSApplicationDelegate, HotkeyManagerDelegate {
     
     private func updateSwitcherView() {
         switcherWindow?.update(
+            appState: appState,
             windows: activeWindows,
             currentIndex: currentIndex,
             scale: appState.thumbnailScale,
@@ -503,6 +554,9 @@ class AppDelegate: NSObject, NSApplicationDelegate, HotkeyManagerDelegate {
     }
     
     func hotkeyOptionReleased() {
+        // If search is active, pinned state is maintained: do not close switcher on option release
+        guard !appState.isSearchActive else { return }
+        
         if switcherWindow?.isVisible ?? false {
             switcherWindow?.hide()
             
@@ -512,6 +566,11 @@ class AppDelegate: NSObject, NSApplicationDelegate, HotkeyManagerDelegate {
                 mruWindowIDs.insert(target.id, at: 0)
                 WindowList.raiseWindow(window: target)
             }
+            
+            // Reset query and filters
+            appState.searchQuery = ""
+            appState.selectedAppFilter = nil
+            appState.isSearchActive = false
         }
         
         appState.isOptionKeyPressed = false
@@ -521,6 +580,11 @@ class AppDelegate: NSObject, NSApplicationDelegate, HotkeyManagerDelegate {
     func hotkeyEscPressed() {
         if switcherWindow?.isVisible ?? false {
             switcherWindow?.hide()
+            
+            // Reset query and filters
+            appState.searchQuery = ""
+            appState.selectedAppFilter = nil
+            appState.isSearchActive = false
         }
         appState.isOptionKeyPressed = false
         appState.isTabKeyPressed = false

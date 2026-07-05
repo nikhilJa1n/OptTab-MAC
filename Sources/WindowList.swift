@@ -427,6 +427,78 @@ class WindowList {
         return getWindowID(from: windowValue as! AXUIElement)
     }
     
+    static func resizeWindow(window: WindowInfo, action: String) {
+        // Find screen the window is on
+        let primaryScreen = NSScreen.screens.first ?? NSScreen.main
+        guard let primaryScreenHeight = primaryScreen?.frame.height else { return }
+        
+        var targetScreen = NSScreen.main ?? NSScreen.screens.first
+        let windowMidX = window.bounds.origin.x + window.bounds.size.width / 2
+        let windowMidY = window.bounds.origin.y + window.bounds.size.height / 2
+        
+        for screen in NSScreen.screens {
+            // Convert window Y to Cocoa Y coordinate to do bounds check
+            let cocoaY = primaryScreenHeight - windowMidY
+            let point = CGPoint(x: windowMidX, y: cocoaY)
+            if screen.frame.contains(point) {
+                targetScreen = screen
+                break
+            }
+        }
+        
+        guard let screen = targetScreen else { return }
+        let visibleFrame = screen.visibleFrame
+        
+        var targetFrame = visibleFrame
+        
+        switch action {
+        case "leftHalf":
+            targetFrame = CGRect(
+                x: visibleFrame.origin.x,
+                y: visibleFrame.origin.y,
+                width: visibleFrame.size.width / 2,
+                height: visibleFrame.size.height
+            )
+        case "rightHalf":
+            targetFrame = CGRect(
+                x: visibleFrame.origin.x + visibleFrame.size.width / 2,
+                y: visibleFrame.origin.y,
+                width: visibleFrame.size.width / 2,
+                height: visibleFrame.size.height
+            )
+        case "maximize":
+            targetFrame = visibleFrame
+        default:
+            return
+        }
+        
+        // Convert targetFrame Cocoa coordinates (bottom-left origin) to Accessibility coordinates (top-left origin)
+        let axX = targetFrame.origin.x
+        let axY = primaryScreenHeight - targetFrame.origin.y - targetFrame.size.height
+        
+        logAction("[resizeWindow] Snapping window id=\(window.id) action=\(action) targetFrame=\(targetFrame) axX=\(axX) axY=\(axY)")
+        
+        let appRef = AXUIElementCreateApplication(window.pid)
+        var windowsValue: AnyObject?
+        if AXUIElementCopyAttributeValue(appRef, kAXWindowsAttribute as CFString, &windowsValue) == .success,
+           let axWindows = windowsValue as? [AXUIElement] {
+            for axWindow in axWindows {
+                if let id = getWindowID(from: axWindow), id == window.id {
+                    var position = CGPoint(x: axX, y: axY)
+                    var size = targetFrame.size
+                    
+                    if let axPosition = AXValueCreate(.cgPoint, &position),
+                       let axSize = AXValueCreate(.cgSize, &size) {
+                        AXUIElementSetAttributeValue(axWindow, kAXPositionAttribute as CFString, axPosition)
+                        AXUIElementSetAttributeValue(axWindow, kAXSizeAttribute as CFString, axSize)
+                        logAction("[resizeWindow] Set bounds successfully")
+                    }
+                    break
+                }
+            }
+        }
+    }
+    
     static func appMatches(window: WindowInfo, appName: String) -> Bool {
         if window.ownerName == appName {
             return true

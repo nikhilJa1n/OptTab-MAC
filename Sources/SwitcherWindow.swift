@@ -5,6 +5,14 @@ class SwitcherWindow: NSPanel {
     private var hostingView: NSHostingView<SwitcherView>?
     private var refreshToken: UUID = UUID()
     
+    override var canBecomeKey: Bool {
+        return true
+    }
+    
+    override var canBecomeMain: Bool {
+        return true
+    }
+    
     init() {
         super.init(
             contentRect: NSRect(x: 0, y: 0, width: 850, height: 260),
@@ -21,10 +29,11 @@ class SwitcherWindow: NSPanel {
         self.ignoresMouseEvents = false // Allow mouse interactions if the user wants to click a thumbnail
     }
     
-    func show(windows: [WindowInfo], currentIndex: Int, scale: Double, enableHoverSwitch: Bool, gridRows: Int, gridCols: Int, onHover: @escaping (Int) -> Void, onClick: @escaping (Int) -> Void) {
+    func show(appState: AppState, windows: [WindowInfo], currentIndex: Int, scale: Double, enableHoverSwitch: Bool, gridRows: Int, gridCols: Int, onHover: @escaping (Int) -> Void, onClick: @escaping (Int) -> Void) {
         // New token forces all WindowCard views to reload their thumbnails
         refreshToken = UUID()
         let rootView = SwitcherView(
+            appState: appState,
             windows: windows,
             currentIndex: currentIndex,
             scale: scale,
@@ -47,15 +56,18 @@ class SwitcherWindow: NSPanel {
         // Recalculate frame to wrap around SwiftUI's intrinsic content size
         if let documentView = self.contentView {
             let fittingSize = documentView.fittingSize
+            logMessage("show: fittingSize=\(fittingSize) frame before setContentSize=\(self.frame)")
             self.setContentSize(fittingSize)
+            logMessage("show: frame after setContentSize=\(self.frame)")
         }
         
         self.centerOnScreen()
         self.makeKeyAndOrderFront(nil)
     }
     
-    func update(windows: [WindowInfo], currentIndex: Int, scale: Double, enableHoverSwitch: Bool, gridRows: Int, gridCols: Int, onHover: @escaping (Int) -> Void, onClick: @escaping (Int) -> Void) {
+    func update(appState: AppState, windows: [WindowInfo], currentIndex: Int, scale: Double, enableHoverSwitch: Bool, gridRows: Int, gridCols: Int, onHover: @escaping (Int) -> Void, onClick: @escaping (Int) -> Void) {
         let rootView = SwitcherView(
+            appState: appState,
             windows: windows,
             currentIndex: currentIndex,
             scale: scale,
@@ -67,11 +79,6 @@ class SwitcherWindow: NSPanel {
             onClickIndex: onClick
         )
         hostingView?.rootView = rootView
-        
-        if let documentView = self.contentView {
-            let fittingSize = documentView.fittingSize
-            self.setContentSize(fittingSize)
-        }
     }
     
     func hide() {
@@ -93,6 +100,21 @@ class SwitcherWindow: NSPanel {
         // Position it slightly above the center (e.g. 55% height) for better ergonomics
         let y = screenFrame.origin.y + (screenFrame.height - windowFrame.height) * 0.55
         
+        logMessage("centerOnScreen: screenFrame=\(screenFrame) windowFrame=\(windowFrame) calculatedX=\(x) calculatedY=\(y)")
         self.setFrameOrigin(NSPoint(x: x, y: y))
+    }
+    
+    private func logMessage(_ msg: String) {
+        let logPath = "/Users/nikhiljain/.gemini/antigravity/brain/feb90e27-a96e-4b36-8783-aee805b013b9/scratch/action_debug.log"
+        let formattedMsg = "\(Date()): [SwitcherWindow] \(msg)\n"
+        if let data = formattedMsg.data(using: .utf8) {
+            if FileManager.default.fileExists(atPath: logPath) {
+                if let fileHandle = FileHandle(forWritingAtPath: logPath) {
+                    fileHandle.seekToEndOfFile()
+                    fileHandle.write(data)
+                    fileHandle.closeFile()
+                }
+            }
+        }
     }
 }
