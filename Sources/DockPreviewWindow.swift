@@ -44,7 +44,7 @@ class DockPreviewWindow: NSPanel {
                 // Refresh list after close animation/action settles
                 DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) { [weak self] in
                     guard let self = self else { return }
-                    let freshWindows = WindowList.getWindows(showAllSpacesOverride: true, showMinimizedOverride: true).filter { $0.ownerName == appName }
+                    let freshWindows = WindowList.getWindows(showAllSpacesOverride: true, showMinimizedOverride: true).filter { WindowList.appMatches(window: $0, appName: appName) }
                     self.update(windows: freshWindows, appName: appName, dockItemFrame: dockItemFrame, scale: scale)
                 }
             }
@@ -96,7 +96,7 @@ class DockPreviewWindow: NSPanel {
                 // Refresh list after close animation/action settles
                 DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) { [weak self] in
                     guard let self = self else { return }
-                    let freshWindows = WindowList.getWindows(showAllSpacesOverride: true, showMinimizedOverride: true).filter { $0.ownerName == appName }
+                    let freshWindows = WindowList.getWindows(showAllSpacesOverride: true, showMinimizedOverride: true).filter { WindowList.appMatches(window: $0, appName: appName) }
                     self.update(windows: freshWindows, appName: appName, dockItemFrame: dockItemFrame, scale: scale)
                 }
             }

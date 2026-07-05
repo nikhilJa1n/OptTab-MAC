@@ -550,7 +550,7 @@ extension AppDelegate: DockHoverMonitorDelegate {
         guard !(switcherWindow?.isVisible ?? false) else { return }
         
         let allWindows = WindowList.getWindows(showAllSpacesOverride: true, showMinimizedOverride: true)
-        let matchingWindows = allWindows.filter { $0.ownerName == appName }
+        let matchingWindows = allWindows.filter { WindowList.appMatches(window: $0, appName: appName) }
         
         guard !matchingWindows.isEmpty else {
             dockPreviewWindow?.hide()

@@ -427,6 +427,22 @@ class WindowList {
         return getWindowID(from: windowValue as! AXUIElement)
     }
     
+    static func appMatches(window: WindowInfo, appName: String) -> Bool {
+        if window.ownerName == appName {
+            return true
+        }
+        if let app = NSRunningApplication(processIdentifier: window.pid) {
+            if app.localizedName == appName {
+                return true
+            }
+        }
+        if appName.localizedCaseInsensitiveContains(window.ownerName) ||
+           window.ownerName.localizedCaseInsensitiveContains(appName) {
+            return true
+        }
+        return false
+    }
+    
     private static func logAction(_ msg: String) {
         let logPath = "/Users/nikhiljain/.gemini/antigravity/brain/feb90e27-a96e-4b36-8783-aee805b013b9/scratch/action_debug.log"
         let formattedMsg = "\(Date()): \(msg)\n"
