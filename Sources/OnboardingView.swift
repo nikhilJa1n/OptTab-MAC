@@ -148,6 +148,24 @@ struct OnboardingView: View {
                 
                 Spacer()
                 
+                // Check for Updates Button
+                Button(action: {
+                    UpdateChecker.shared.checkForUpdates(verbose: true)
+                }) {
+                    HStack {
+                        Image(systemName: "arrow.clockwise.circle")
+                        Text("Check for Updates")
+                            .font(.system(size: 11, weight: .medium, design: .rounded))
+                    }
+                    .foregroundColor(.white.opacity(0.7))
+                    .padding(.vertical, 6)
+                    .padding(.horizontal, 10)
+                    .background(Color.white.opacity(0.08))
+                    .cornerRadius(6)
+                }
+                .buttonStyle(PlainButtonStyle())
+                .padding(.bottom, 8)
+                
                 // Status Light
                 HStack(spacing: 8) {
                     Circle()

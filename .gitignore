@@ -7,3 +7,6 @@
 
 # Compiled App Bundle
 AdvancedDock.app/
+
+# Compiled Installer
+*.dmg

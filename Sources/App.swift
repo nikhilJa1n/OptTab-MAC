@@ -111,6 +111,11 @@ class AppDelegate: NSObject, NSApplicationDelegate, HotkeyManagerDelegate {
         
         // Initialize MRU with current active window
         updateMRUWithActiveWindow()
+        
+        // Check for updates asynchronously on startup after a brief delay
+        DispatchQueue.main.asyncAfter(deadline: .now() + 2.0) {
+            UpdateChecker.shared.checkForUpdates(verbose: false)
+        }
     }
     
     @objc func handleWindowAction(_ notification: Notification) {

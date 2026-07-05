@@ -57,3 +57,29 @@ echo "=== Signing App Bundle with AdvancedDockDeveloper Certificate ==="
 codesign --force --deep --sign "AdvancedDockDeveloper" "${APP_DIR}"
 
 echo "=== App Bundle created successfully at ${APP_DIR} ==="
+
+# Create DMG Installer
+echo "=== Creating DMG Installer ==="
+DMG_NAME="AdvancedDock"
+DMG_FILE="${DMG_NAME}.dmg"
+
+# Remove old DMG if exists
+rm -f "${DMG_FILE}"
+
+# Create a temporary staging directory
+STAGING_DIR="dmg_staging"
+mkdir -p "${STAGING_DIR}"
+
+# Copy the app bundle
+cp -R "${APP_DIR}" "${STAGING_DIR}/"
+
+# Create a symlink to /Applications for easy drag-and-drop installation
+ln -s /Applications "${STAGING_DIR}/Applications"
+
+# Create the DMG using hdiutil
+hdiutil create -volname "${DMG_NAME}" -srcfolder "${STAGING_DIR}" -ov -format UDZO "${DMG_FILE}"
+
+# Clean up staging directory
+rm -rf "${STAGING_DIR}"
+
+echo "=== DMG created successfully at ${DMG_FILE} ==="
