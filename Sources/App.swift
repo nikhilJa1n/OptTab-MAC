@@ -332,7 +332,7 @@ class AppDelegate: NSObject, NSApplicationDelegate, HotkeyManagerDelegate {
         let target = activeWindows[currentIndex]
         mruWindowIDs.removeAll(where: { $0 == target.id })
         mruWindowIDs.insert(target.id, at: 0)
-        hotkeyOptionReleased()
+        hotkeyOptionReleased(force: true)
     }
     
     func setupStatusBar() {
@@ -533,8 +533,14 @@ class AppDelegate: NSObject, NSApplicationDelegate, HotkeyManagerDelegate {
         }
     }
     func hotkeyOptionReleased() {
-        // If the switcher is the key window, pin it
-        guard !(switcherWindow?.isKeyWindow ?? false) else { return }
+        hotkeyOptionReleased(force: false)
+    }
+    
+    func hotkeyOptionReleased(force: Bool) {
+        if !force {
+            // If the switcher is the key window, pin it
+            guard !(switcherWindow?.isKeyWindow ?? false) else { return }
+        }
         
         if switcherWindow?.isVisible ?? false {
             switcherWindow?.hide()
