@@ -11,29 +11,65 @@ struct DockPreviewView: View {
         let cardWidth = 160.0 * scale
         let cardHeight = 100.0 * scale
         let spacing = 12.0
-        let padding = 10.0
+        let padding = 12.0
         
-        let totalWidth = cardWidth * Double(windows.count) + spacing * Double(max(0, windows.count - 1)) + padding * 2
-        let totalHeight = cardHeight + 35.0 // Card height + title/spacing + padding
+        let maxCols = 3
+        let cols = min(windows.count, maxCols)
+        let rows = Int(ceil(Double(windows.count) / Double(cols)))
         
-        HStack(spacing: spacing) {
-            ForEach(windows) { window in
-                DockPreviewCard(
-                    window: window,
-                    scale: scale,
-                    onSelect: { onSelect(window) },
-                    onClose: { onClose(window) }
-                )
+        let columns = Array(repeating: GridItem(.fixed(cardWidth), spacing: spacing), count: cols)
+        
+        let headerHeight = 22.0
+        let cardTotalHeight = cardHeight + 20.0 // Card height + title text height
+        
+        let totalWidth = cardWidth * Double(cols) + spacing * Double(max(0, cols - 1)) + padding * 2
+        let totalHeight = headerHeight + 12.0 + cardTotalHeight * Double(rows) + spacing * Double(max(0, rows - 1)) + padding * 2
+        
+        VStack(alignment: .leading, spacing: 12) {
+            // App Header
+            HStack(spacing: 8) {
+                if let firstWindow = windows.first, let icon = firstWindow.appIcon {
+                    Image(nsImage: icon)
+                        .resizable()
+                        .aspectRatio(contentMode: .fit)
+                        .frame(width: 18, height: 18)
+                }
+                Text(appName)
+                    .font(.system(size: 12, weight: .bold, design: .rounded))
+                    .foregroundColor(.white)
+                
+                Text("•")
+                    .foregroundColor(.white.opacity(0.3))
+                
+                Text("\(windows.count) window\(windows.count > 1 ? "s" : "")")
+                    .font(.system(size: 11, weight: .medium, design: .rounded))
+                    .foregroundColor(.white.opacity(0.55))
+                
+                Spacer()
+            }
+            .frame(height: headerHeight)
+            .padding(.horizontal, 4)
+            
+            // Cards Grid
+            LazyVGrid(columns: columns, spacing: spacing) {
+                ForEach(windows) { window in
+                    DockPreviewCard(
+                        window: window,
+                        scale: scale,
+                        onSelect: { onSelect(window) },
+                        onClose: { onClose(window) }
+                    )
+                }
             }
         }
         .padding(padding)
         .frame(width: totalWidth, height: totalHeight)
         .background(
-            VisualEffectView(material: .hudWindow, blendingMode: .behindWindow, cornerRadius: 14)
+            VisualEffectView(material: .hudWindow, blendingMode: .behindWindow, cornerRadius: 16)
         )
         .overlay(
-            RoundedRectangle(cornerRadius: 14, style: .continuous)
-                .stroke(Color.white.opacity(0.12), lineWidth: 1)
+            RoundedRectangle(cornerRadius: 16, style: .continuous)
+                .stroke(Color.white.opacity(0.12), lineWidth: 1.5)
         )
     }
 }
@@ -96,6 +132,7 @@ struct DockPreviewCard: View {
                             }
                         }
                         .padding(8)
+                        .frame(width: cardWidth, height: cardHeight)
                     }
                 }
                 .frame(width: cardWidth, height: cardHeight)

@@ -25,6 +25,8 @@ Built natively in Swift and SwiftUI, AdvancedDock runs as a highly efficient bac
 
 ### 2. Interactive Dock Previews
 *   Hover over any active Dock icon to see real-time floating thumbnails of that application's open windows.
+*   **App Header**: Displays the application name, icon, and the total count of open windows.
+*   **Smart Grid Layout**: Arranges thumbnails dynamically in a multi-column wrapping grid (up to 3 columns) when multiple windows are open, preventing the panel from stretching offscreen.
 *   Select, close, or snap windows directly from the dock hover preview panel.
 *   **Customizable Sizing**: Adjust the dock hover preview thumbnail size independently from 70% to 200% using a dedicated slider in the Control Panel settings.
 ---
