@@ -215,8 +215,8 @@ class WindowList {
             // FILTER: Check if window ID is valid in the AX tree, with fallback for other spaces
             let isAXValid = validAXWindowIDs.contains(windowID)
             if !isAXValid {
-                // If showAllSpaces is true, we keep any regular app window
-                if !showAllSpaces {
+                // If showAllSpaces is true, or if the window is currently onscreen, we keep it
+                if !showAllSpaces && !isOnscreen {
                     continue
                 }
             }
