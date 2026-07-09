@@ -79,6 +79,7 @@ class SwitcherWindow: NSPanel {
     
     func hide() {
         self.orderOut(nil)
+        WindowList.clearThumbnailCache()
     }
     
     private func centerOnScreen() {

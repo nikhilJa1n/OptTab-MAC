@@ -61,7 +61,20 @@ private func selectTabIfNeeded(element: AXUIElement, targetTitle: String) -> Boo
     return false
 }
 
+private struct CachedThumbnail {
+    let image: CGImage
+    let timestamp: Date
+}
+
 class WindowList {
+    private static var thumbnailCache: [CGWindowID: CachedThumbnail] = [:]
+    private static let cacheLock = NSLock()
+    
+    static func clearThumbnailCache() {
+        cacheLock.lock()
+        thumbnailCache.removeAll()
+        cacheLock.unlock()
+    }
     static func getWindows(showAllSpacesOverride: Bool? = nil, showMinimizedOverride: Bool? = nil) -> [WindowInfo] {
         // Gather onscreen Z-order rank from active space to sort raw lists in MRU order
         var onscreenZOrder: [CGWindowID: Int] = [:]
@@ -338,6 +351,13 @@ class WindowList {
     }
     
     static func getThumbnail(for windowID: CGWindowID) -> CGImage? {
+        cacheLock.lock()
+        if let cached = thumbnailCache[windowID], Date().timeIntervalSince(cached.timestamp) < 3.0 {
+            cacheLock.unlock()
+            return cached.image
+        }
+        cacheLock.unlock()
+        
         var capturedImage: CGImage?
         let semaphore = DispatchSemaphore(value: 0)
         
@@ -373,6 +393,12 @@ class WindowList {
                 windowID,
                 [.boundsIgnoreFraming, .bestResolution]
             )
+        }
+        
+        if let img = capturedImage {
+            cacheLock.lock()
+            thumbnailCache[windowID] = CachedThumbnail(image: img, timestamp: Date())
+            cacheLock.unlock()
         }
         
         return capturedImage
