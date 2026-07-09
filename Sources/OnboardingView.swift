@@ -1,6 +1,12 @@
 import SwiftUI
 import Combine
 
+struct RunningAppInfo: Identifiable, Hashable {
+    let id = UUID()
+    let name: String
+    let icon: NSImage?
+}
+
 class AppState: ObservableObject {
     @Published var isAccessibilityGranted = false
     @Published var isScreenRecordingGranted = false
@@ -40,6 +46,20 @@ class AppState: ObservableObject {
         didSet { UserDefaults.standard.set(dockHoverThumbnailScale, forKey: "dockHoverThumbnailScale") }
     }
     
+    @Published var hotkeyKeyCode: Int {
+        didSet { UserDefaults.standard.set(hotkeyKeyCode, forKey: "hotkeyKeyCode") }
+    }
+    
+    @Published var hotkeyModifiers: Int {
+        didSet { UserDefaults.standard.set(hotkeyModifiers, forKey: "hotkeyModifiers") }
+    }
+    
+    @Published var excludedApps: Set<String> {
+        didSet { UserDefaults.standard.set(Array(excludedApps), forKey: "excludedApps") }
+    }
+    
+    @Published var isRecordingShortcut = false
+    
     private var timer: AnyCancellable?
     
     init() {
@@ -55,6 +75,14 @@ class AppState: ObservableObject {
         
         let dockScaleVal = UserDefaults.standard.double(forKey: "dockHoverThumbnailScale")
         self.dockHoverThumbnailScale = dockScaleVal == 0 ? 1.0 : dockScaleVal
+        
+        self.hotkeyKeyCode = UserDefaults.standard.object(forKey: "hotkeyKeyCode") as? Int ?? 48
+        self.hotkeyModifiers = UserDefaults.standard.object(forKey: "hotkeyModifiers") as? Int ?? 2 // maskAlternate = 2
+        if let excluded = UserDefaults.standard.stringArray(forKey: "excludedApps") {
+            self.excludedApps = Set(excluded)
+        } else {
+            self.excludedApps = []
+        }
         
         checkPermissions()
         startPermissionPolling()
@@ -77,6 +105,25 @@ class AppState: ObservableObject {
                     NotificationCenter.default.post(name: .accessibilityGranted, object: nil)
                 }
             }
+    }
+    
+    func getRunningApps() -> [RunningAppInfo] {
+        let apps = NSWorkspace.shared.runningApplications
+            .filter { $0.activationPolicy == .regular && $0.bundleIdentifier != Bundle.main.bundleIdentifier }
+            .compactMap { app -> RunningAppInfo? in
+                guard let name = app.localizedName else { return nil }
+                return RunningAppInfo(name: name, icon: app.icon)
+            }
+        
+        var seen = Set<String>()
+        var uniqueApps = [RunningAppInfo]()
+        for a in apps {
+            if !seen.contains(a.name) {
+                seen.insert(a.name)
+                uniqueApps.append(a)
+            }
+        }
+        return uniqueApps.sorted(by: { $0.name.lowercased() < $1.name.lowercased() })
     }
 }
 
@@ -185,6 +232,14 @@ struct OnboardingView: View {
         }
         .frame(width: 660, height: 460)
         .preferredColorScheme(.dark)
+        .overlay(
+            Group {
+                if state.isRecordingShortcut {
+                    KeyRecordingView(state: state)
+                        .frame(width: 0, height: 0)
+                }
+            }
+        )
     }
 }
 
@@ -398,6 +453,92 @@ struct PermissionsTab: View {
                             }
                             .pickerStyle(MenuPickerStyle())
                         }
+                        
+                        Divider()
+                        
+                        // Hotkey Shortcut Recorder
+                        HStack {
+                            VStack(alignment: .leading, spacing: 2) {
+                                Text("App Switcher Shortcut")
+                                    .font(.system(size: 12, weight: .bold, design: .rounded))
+                                    .foregroundColor(.white)
+                                Text("Click to record a custom shortcut to trigger the switcher HUD.")
+                                    .font(.system(size: 10, weight: .regular, design: .rounded))
+                                    .foregroundColor(.white.opacity(0.55))
+                            }
+                            Spacer()
+                            
+                            Button(action: {
+                                state.isRecordingShortcut = true
+                            }) {
+                                Text(state.isRecordingShortcut ? "Press Keys (Esc to Cancel)..." : hotkeyString(keyCode: state.hotkeyKeyCode, modifiers: state.hotkeyModifiers))
+                                    .font(.system(size: 11, weight: .bold, design: .monospaced))
+                                    .foregroundColor(.white)
+                                    .padding(.horizontal, 12)
+                                    .padding(.vertical, 6)
+                                    .background(state.isRecordingShortcut ? Color.red.opacity(0.3) : Color.blue.opacity(0.2))
+                                    .cornerRadius(6)
+                                    .overlay(
+                                        RoundedRectangle(cornerRadius: 6)
+                                            .stroke(state.isRecordingShortcut ? Color.red : Color.blue, lineWidth: 1)
+                                    )
+                            }
+                            .buttonStyle(PlainButtonStyle())
+                        }
+                        
+                        Divider()
+                        
+                        // App Exclusions list
+                        VStack(alignment: .leading, spacing: 8) {
+                            VStack(alignment: .leading, spacing: 2) {
+                                Text("Excluded Applications")
+                                    .font(.system(size: 12, weight: .bold, design: .rounded))
+                                    .foregroundColor(.white)
+                                Text("Select apps that should never appear in the switcher HUD cycle.")
+                                    .font(.system(size: 10, weight: .regular, design: .rounded))
+                                    .foregroundColor(.white.opacity(0.55))
+                            }
+                            
+                            ScrollView(.horizontal, showsIndicators: false) {
+                                HStack(spacing: 12) {
+                                    ForEach(state.getRunningApps()) { app in
+                                        let isExcluded = state.excludedApps.contains(app.name)
+                                        Button(action: {
+                                            if isExcluded {
+                                                state.excludedApps.remove(app.name)
+                                            } else {
+                                                state.excludedApps.insert(app.name)
+                                            }
+                                        }) {
+                                            HStack(spacing: 6) {
+                                                if let icon = app.icon {
+                                                    Image(nsImage: icon)
+                                                        .resizable()
+                                                        .frame(width: 16, height: 16)
+                                                }
+                                                Text(app.name)
+                                                    .font(.system(size: 10, weight: .medium))
+                                                    .foregroundColor(isExcluded ? .white.opacity(0.4) : .white)
+                                                
+                                                Image(systemName: isExcluded ? "square" : "checkmark.square.fill")
+                                                    .foregroundColor(isExcluded ? .white.opacity(0.3) : .blue)
+                                                    .font(.system(size: 10))
+                                            }
+                                            .padding(.horizontal, 8)
+                                            .padding(.vertical, 4)
+                                            .background(isExcluded ? Color.white.opacity(0.04) : Color.blue.opacity(0.12))
+                                            .cornerRadius(6)
+                                            .overlay(
+                                                RoundedRectangle(cornerRadius: 6)
+                                                    .stroke(isExcluded ? Color.white.opacity(0.08) : Color.blue.opacity(0.3), lineWidth: 1)
+                                            )
+                                        }
+                                        .buttonStyle(PlainButtonStyle())
+                                    }
+                                }
+                                .padding(.vertical, 4)
+                            }
+                        }
                     }
                 }
                 .padding(14)
@@ -609,5 +750,151 @@ struct ToggleRow: View {
             }
         }
         .toggleStyle(SwitchToggleStyle(tint: .blue))
+    }
+}
+
+struct KeyRecordingView: NSViewRepresentable {
+    @ObservedObject var state: AppState
+    
+    class Coordinator: NSView {
+        var state: AppState?
+        
+        override var acceptsFirstResponder: Bool { true }
+        
+        override func keyDown(with event: NSEvent) {
+            guard let state = state, state.isRecordingShortcut else {
+                super.keyDown(with: event)
+                return
+            }
+            
+            let keyCode = Int(event.keyCode)
+            
+            // If Esc is pressed, cancel recording
+            if keyCode == 53 {
+                state.isRecordingShortcut = false
+                return
+            }
+            
+            // Parse modifier flags
+            let flags = event.modifierFlags
+            let isCmd = flags.contains(.command)
+            let isOpt = flags.contains(.option)
+            let isCtrl = flags.contains(.control)
+            let isShift = flags.contains(.shift)
+            
+            let modifierMask = (isCmd ? 1 : 0) | (isOpt ? 2 : 0) | (isCtrl ? 4 : 0) | (isShift ? 8 : 0)
+            
+            // Require at least one modifier key (except Shift alone)
+            if modifierMask == 0 || modifierMask == 8 {
+                return
+            }
+            
+            DispatchQueue.main.async {
+                state.hotkeyKeyCode = keyCode
+                state.hotkeyModifiers = modifierMask
+                state.isRecordingShortcut = false
+            }
+        }
+        
+        override func flagsChanged(with event: NSEvent) {
+            if state?.isRecordingShortcut == true {
+                self.window?.makeFirstResponder(self)
+            }
+            super.flagsChanged(with: event)
+        }
+    }
+    
+    func makeCoordinator() -> Coordinator {
+        let coord = Coordinator()
+        coord.state = state
+        return coord
+    }
+    
+    func makeNSView(context: Context) -> NSView {
+        let view = context.coordinator
+        DispatchQueue.main.async {
+            view.window?.makeFirstResponder(view)
+        }
+        return view
+    }
+    
+    func updateNSView(_ nsView: NSView, context: Context) {
+        if state.isRecordingShortcut {
+            DispatchQueue.main.async {
+                nsView.window?.makeFirstResponder(nsView)
+            }
+        }
+    }
+}
+
+func hotkeyString(keyCode: Int, modifiers: Int) -> String {
+    var str = ""
+    if (modifiers & 1) != 0 { str += "⌘ " }
+    if (modifiers & 2) != 0 { str += "⌥ " }
+    if (modifiers & 4) != 0 { str += "⌃ " }
+    if (modifiers & 8) != 0 { str += "⇧ " }
+    
+    switch keyCode {
+    case 48: str += "Tab"
+    case 49: str += "Space"
+    case 53: str += "Esc"
+    case 36: str += "Return"
+    case 50: str += "`"
+    default:
+        str += keyName(for: keyCode)
+    }
+    return str
+}
+
+func keyName(for keyCode: Int) -> String {
+    switch keyCode {
+    case 0: return "A"
+    case 1: return "S"
+    case 2: return "D"
+    case 3: return "F"
+    case 4: return "H"
+    case 5: return "G"
+    case 6: return "Z"
+    case 7: return "X"
+    case 8: return "C"
+    case 9: return "V"
+    case 11: return "B"
+    case 12: return "Q"
+    case 13: return "W"
+    case 14: return "E"
+    case 15: return "R"
+    case 16: return "Y"
+    case 17: return "T"
+    case 18: return "1"
+    case 19: return "2"
+    case 20: return "3"
+    case 21: return "4"
+    case 22: return "6"
+    case 23: return "5"
+    case 24: return "="
+    case 25: return "9"
+    case 26: return "7"
+    case 27: return "-"
+    case 28: return "8"
+    case 29: return "0"
+    case 30: return "]"
+    case 31: return "O"
+    case 32: return "U"
+    case 33: return "["
+    case 34: return "I"
+    case 35: return "P"
+    case 37: return "L"
+    case 38: return "J"
+    case 39: return "'"
+    case 40: return "K"
+    case 41: return ";"
+    case 42: return "\\"
+    case 43: return ","
+    case 44: return "/"
+    case 45: return "N"
+    case 46: return "M"
+    case 47: return "."
+    case 50: return "`"
+    default: return "Key \(keyCode)"
     }
 }

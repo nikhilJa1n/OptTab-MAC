@@ -32,6 +32,89 @@ struct VisualEffectView: NSViewRepresentable {
     }
 }
 
+struct IndexedWindow: Identifiable, Equatable {
+    var id: CGWindowID { window.id }
+    let index: Int
+    let window: WindowInfo
+}
+
+struct WindowStack: Identifiable {
+    var id: String { ownerName }
+    let ownerName: String
+    var windows: [IndexedWindow]
+}
+
+struct AppStackView: View {
+    let stack: WindowStack
+    let currentIndex: Int
+    let scale: Double
+    let enableHoverSwitch: Bool
+    let refreshToken: UUID
+    let onHoverIndex: (Int) -> Void
+    let onClickIndex: (Int) -> Void
+    @ObservedObject var appState: AppState
+    
+    @State private var isHovered = false
+    
+    var body: some View {
+        let cardWidth = 170.0 * scale
+        let spacing = 20.0 * scale
+        
+        let isStackSelected = stack.windows.contains(where: { $0.index == currentIndex })
+        let isExpanded = isHovered || isStackSelected
+        
+        HStack(spacing: isExpanded ? spacing : -cardWidth + 12) {
+            ForEach(0..<stack.windows.count, id: \.self) { idx in
+                let indexedWindow = stack.windows[idx]
+                let isWindowSelected = indexedWindow.index == currentIndex
+                
+                WindowCard(
+                    window: indexedWindow.window,
+                    isSelected: isWindowSelected,
+                    scale: scale,
+                    enableHoverSwitch: enableHoverSwitch,
+                    refreshToken: refreshToken,
+                    onHover: { onHoverIndex(indexedWindow.index) },
+                    onClick: { onClickIndex(indexedWindow.index) },
+                    appState: appState
+                )
+                .id(indexedWindow.id)
+                .offset(x: isExpanded ? 0 : CGFloat(idx * 6), y: isExpanded ? 0 : CGFloat(idx * -6))
+                .scaleEffect(isExpanded ? 1.0 : CGFloat(1.0 - Double(idx) * 0.05))
+                .zIndex(Double(stack.windows.count - idx))
+                .overlay(
+                    Group {
+                        if !isExpanded && stack.windows.count > 1 && idx == 0 {
+                            VStack {
+                                HStack {
+                                    Spacer()
+                                    Text("\(stack.windows.count)")
+                                        .font(.system(size: 9, weight: .bold, design: .rounded))
+                                        .foregroundColor(.white)
+                                        .padding(.horizontal, 6)
+                                        .padding(.vertical, 3)
+                                        .background(Color.blue)
+                                        .clipShape(Capsule())
+                                        .shadow(color: Color.black.opacity(0.3), radius: 2)
+                                        .padding(.trailing, -4)
+                                        .padding(.top, -4)
+                                }
+                                Spacer()
+                            }
+                        }
+                    }
+                )
+            }
+        }
+        .animation(.spring(response: 0.35, dampingFraction: 0.7), value: isExpanded)
+        .onHover { hover in
+            withAnimation(.spring(response: 0.35, dampingFraction: 0.7)) {
+                isHovered = hover
+            }
+        }
+    }
+}
+
 struct SwitcherView: View {
     @ObservedObject var appState: AppState
     let windows: [WindowInfo]
@@ -42,8 +125,31 @@ struct SwitcherView: View {
     let onHoverIndex: (Int) -> Void
     let onClickIndex: (Int) -> Void
     
+    var groupedStacks: [WindowStack] {
+        var stacks = [WindowStack]()
+        var indexMap = [String: Int]()
+        
+        for (idx, w) in windows.enumerated() {
+            let indexed = IndexedWindow(index: idx, window: w)
+            if let stackIdx = indexMap[w.ownerName] {
+                stacks[stackIdx].windows.append(indexed)
+            } else {
+                indexMap[w.ownerName] = stacks.count
+                stacks.append(WindowStack(ownerName: w.ownerName, windows: [indexed]))
+            }
+        }
+        return stacks
+    }
+    
+    var currentStackIndex: Int {
+        guard let idx = groupedStacks.firstIndex(where: { stack in
+            stack.windows.contains(where: { $0.index == currentIndex })
+        }) else { return 0 }
+        return idx
+    }
+    
     var gridCols: Int {
-        return min(windows.count, 5) > 0 ? min(windows.count, 5) : 5
+        return min(groupedStacks.count, 5) > 0 ? min(groupedStacks.count, 5) : 5
     }
     
     var pageSize: Int {
@@ -51,8 +157,22 @@ struct SwitcherView: View {
     }
     
     var currentPage: Int {
-        guard !windows.isEmpty else { return 0 }
-        return currentIndex / pageSize
+        guard !groupedStacks.isEmpty else { return 0 }
+        return currentStackIndex / pageSize
+    }
+    
+    var footerText: String {
+        let cmdRequired = (appState.hotkeyModifiers & 1) != 0
+        let optRequired = (appState.hotkeyModifiers & 2) != 0
+        let ctrlRequired = (appState.hotkeyModifiers & 4) != 0
+        
+        var modName = ""
+        if cmdRequired { modName += "⌘ (Command) " }
+        else if optRequired { modName += "⌥ (Option) " }
+        else if ctrlRequired { modName += "⌃ (Control) " }
+        else { modName += "Shortcut " }
+        
+        return "Release \(modName)to switch  •  Press ⎋ (Esc) to cancel"
     }
     
     var body: some View {
@@ -108,28 +228,28 @@ struct SwitcherView: View {
                 HStack(spacing: CGFloat(spacing)) {
                     Spacer()
                     let start = currentPage * pageSize
-                    let end = min(start + pageSize, windows.count)
+                    let end = min(start + pageSize, groupedStacks.count)
                     
-                    ForEach(start..<end, id: \.self) { cardIndex in
-                        let window = windows[cardIndex]
-                        WindowCard(
-                            window: window,
-                            isSelected: cardIndex == currentIndex,
+                    ForEach(start..<end, id: \.self) { stackIndex in
+                        let stack = groupedStacks[stackIndex]
+                        AppStackView(
+                            stack: stack,
+                            currentIndex: currentIndex,
                             scale: scale,
                             enableHoverSwitch: enableHoverSwitch,
                             refreshToken: refreshToken,
-                            onHover: { onHoverIndex(cardIndex) },
-                            onClick: { onClickIndex(cardIndex) },
+                            onHoverIndex: onHoverIndex,
+                            onClickIndex: onClickIndex,
                             appState: appState
                         )
-                        .id(window.id)
+                        .id(stack.ownerName)
                     }
                     Spacer()
                 }
                 .frame(height: CGFloat(gridHeight + 15), alignment: .center)
                 
                 // Page Indicator Dots
-                let totalPages = Int(ceil(Double(windows.count) / Double(pageSize)))
+                let totalPages = Int(ceil(Double(groupedStacks.count) / Double(pageSize)))
                 if totalPages > 1 {
                     HStack(spacing: 8) {
                         ForEach(0..<totalPages, id: \.self) { pageIndex in
@@ -148,7 +268,7 @@ struct SwitcherView: View {
             }
             
             // Shortcut Help Footer
-            Text("Release ⌥ (Option) to switch  •  Press ⎋ (Esc) to cancel")
+            Text(footerText)
                 .font(.system(size: 11, weight: .semibold, design: .rounded))
                 .foregroundColor(.white.opacity(0.4))
                 .padding(.bottom, 4)

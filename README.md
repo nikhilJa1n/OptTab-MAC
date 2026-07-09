@@ -29,6 +29,11 @@ Built natively in Swift and SwiftUI, AdvancedDock runs as a highly efficient bac
 *   **Smart Grid Layout**: Arranges thumbnails dynamically in a multi-column wrapping grid (up to 3 columns) when multiple windows are open, preventing the panel from stretching offscreen.
 *   Select, close, or snap windows directly from the dock hover preview panel.
 *   **Customizable Sizing**: Adjust the dock hover preview thumbnail size independently from 70% to 200% using a dedicated slider in the Control Panel settings.
+
+### 3. Personalization & Control
+*   **Customizable Hotkeys**: Record your own global activation shortcut (e.g. `⌥ + Space` or `⌘ + Tab`) via the settings shortcut recorder.
+*   **App Exclusions Blocklist**: Prevent specific applications from showing up in the switcher HUD cycle.
+*   **Window Stacking & Grouping**: Group multiple windows from the same application into a visual "stacked deck" containing a count badge. Hovering or navigating onto the stack fans the cards out horizontally inline with smooth spring physics.
 ---
 
 ## 📸 Preview & Aesthetics

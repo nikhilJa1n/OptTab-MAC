@@ -14,11 +14,13 @@ protocol HotkeyManagerDelegate: AnyObject {
 
 class HotkeyManager {
     weak var delegate: HotkeyManagerDelegate?
+    let appState: AppState
     private var eventTap: CFMachPort?
     private var runLoopSource: CFRunLoopSource?
     
-    init(delegate: HotkeyManagerDelegate) {
+    init(delegate: HotkeyManagerDelegate, appState: AppState) {
         self.delegate = delegate
+        self.appState = appState
     }
     
     func start() {
@@ -66,29 +68,40 @@ class HotkeyManager {
     
     private func handleEvent(proxy: CGEventTapProxy, type: CGEventType, event: CGEvent) -> Unmanaged<CGEvent>? {
         let flags = event.flags
-        let isOptionPressed = flags.contains(.maskAlternate)
+        
+        let isCmd = flags.contains(.maskCommand)
+        let isOpt = flags.contains(.maskAlternate)
+        let isCtrl = flags.contains(.maskControl)
+        let isShift = flags.contains(.maskShift)
+        
+        let cmdRequired = (appState.hotkeyModifiers & 1) != 0
+        let optRequired = (appState.hotkeyModifiers & 2) != 0
+        let ctrlRequired = (appState.hotkeyModifiers & 4) != 0
+        
+        let allRequiredPressed = (!cmdRequired || isCmd) &&
+                                 (!optRequired || isOpt) &&
+                                 (!ctrlRequired || isCtrl)
         
         if type == .flagsChanged {
             DispatchQueue.main.async { [weak self] in
                 guard let self = self else { return }
-                self.delegate?.hotkeyFlagsChanged(isOptionPressed: isOptionPressed)
+                self.delegate?.hotkeyFlagsChanged(isOptionPressed: optRequired ? isOpt : allRequiredPressed)
                 
                 // Option released while switcher is active -> commit selection
-                if !isOptionPressed && (self.delegate?.isSwitcherVisible() ?? false) {
+                if !allRequiredPressed && (self.delegate?.isSwitcherVisible() ?? false) {
                     self.delegate?.hotkeyOptionReleased()
                 }
             }
         } else if type == .keyDown {
             let keyCode = event.getIntegerValueField(.keyboardEventKeycode)
             
-            // Tab key code is 48
-            if keyCode == 48 {
-                if isOptionPressed {
-                    let isShiftPressed = flags.contains(.maskShift)
+            // Custom Switcher Hotkey
+            if keyCode == appState.hotkeyKeyCode {
+                if (cmdRequired == isCmd) && (optRequired == isOpt) && (ctrlRequired == isCtrl) {
                     DispatchQueue.main.async { [weak self] in
-                        self?.delegate?.hotkeyOptionTabPressed(backward: isShiftPressed)
+                        self?.delegate?.hotkeyOptionTabPressed(backward: isShift)
                     }
-                    return nil // Swallow Option+Tab
+                    return nil // Swallow Custom Hotkey
                 }
             }
             

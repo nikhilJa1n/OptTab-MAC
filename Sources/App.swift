@@ -44,7 +44,7 @@ class AppDelegate: NSObject, NSApplicationDelegate, HotkeyManagerDelegate {
         }
         
         // Initialize Hotkey Manager
-        hotkeyManager = HotkeyManager(delegate: self)
+        hotkeyManager = HotkeyManager(delegate: self, appState: appState)
         if appState.isAccessibilityGranted {
             hotkeyManager?.start()
         } else {
@@ -243,7 +243,8 @@ class AppDelegate: NSObject, NSApplicationDelegate, HotkeyManagerDelegate {
     }
     
     func getSortedWindowsAndIndex(backward: Bool) -> ([WindowInfo], Int) {
-        let rawWindows = WindowList.getWindows()
+        var rawWindows = WindowList.getWindows()
+        rawWindows = rawWindows.filter { !appState.excludedApps.contains($0.ownerName) }
         guard !rawWindows.isEmpty else { return ([], 0) }
         
         // Determine previously active window ID using internal MRU list if available
@@ -284,7 +285,8 @@ class AppDelegate: NSObject, NSApplicationDelegate, HotkeyManagerDelegate {
     @objc func refreshActiveWindows() {
         let previousSelectedID = (currentIndex >= 0 && currentIndex < activeWindows.count) ? activeWindows[currentIndex].id : nil
         
-        let rawWindows = WindowList.getWindows()
+        var rawWindows = WindowList.getWindows()
+        rawWindows = rawWindows.filter { !appState.excludedApps.contains($0.ownerName) }
         if rawWindows.isEmpty {
             activeWindows = []
             switcherWindow?.hide()
@@ -598,6 +600,11 @@ extension AppDelegate: DockHoverMonitorDelegate {
     func dockHoverMonitorDidHover(appName: String, itemFrame: CGRect) {
         // Only show previews if the main switcher window is not visible to avoid clutter
         guard !(switcherWindow?.isVisible ?? false) else { return }
+        
+        guard !appState.excludedApps.contains(appName) else {
+            dockPreviewWindow?.hide()
+            return
+        }
         
         let allWindows = WindowList.getWindows(showAllSpacesOverride: true, showMinimizedOverride: true)
         let matchingWindows = allWindows.filter { WindowList.appMatches(window: $0, appName: appName) }
