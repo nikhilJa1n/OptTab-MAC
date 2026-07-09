@@ -52,6 +52,10 @@ class AppState: ObservableObject {
         didSet { UserDefaults.standard.set(dockHoverThumbnailScale, forKey: "dockHoverThumbnailScale") }
     }
     
+    @Published var switcherLayoutMode: String {
+        didSet { UserDefaults.standard.set(switcherLayoutMode, forKey: "switcherLayoutMode") }
+    }
+    
     @Published var selectedAppFilter: String? = nil
     @Published var searchQuery: String = ""
     @Published var isSearchActive: Bool = false
@@ -76,6 +80,8 @@ class AppState: ObservableObject {
         
         let dockScaleVal = UserDefaults.standard.double(forKey: "dockHoverThumbnailScale")
         self.dockHoverThumbnailScale = dockScaleVal == 0 ? 1.0 : dockScaleVal
+        
+        self.switcherLayoutMode = UserDefaults.standard.string(forKey: "switcherLayoutMode") ?? "Standard"
         
         checkPermissions()
         startPermissionPolling()
@@ -442,6 +448,29 @@ struct PermissionsTab: View {
                                 Text("Rainbow Sweep").tag("Rainbow Sweep")
                                     .font(.system(size: 11, weight: .medium))
                                 Text("Ultra Minimal").tag("Ultra Minimal")
+                                    .font(.system(size: 11, weight: .medium))
+                            }
+                            .pickerStyle(MenuPickerStyle())
+                            .frame(width: 140)
+                        }
+                        
+                        Divider()
+                        
+                        // Switcher Layout Mode Picker
+                        HStack {
+                            VStack(alignment: .leading, spacing: 2) {
+                                Text("Switcher Layout Mode")
+                                    .font(.system(size: 12, weight: .bold, design: .rounded))
+                                    .foregroundColor(.white)
+                                Text("Toggle between a full standard grid or a minimalist simple row.")
+                                    .font(.system(size: 10, weight: .regular, design: .rounded))
+                                    .foregroundColor(.white.opacity(0.55))
+                            }
+                            Spacer()
+                            Picker("", selection: $state.switcherLayoutMode) {
+                                Text("Standard").tag("Standard")
+                                    .font(.system(size: 11, weight: .medium))
+                                Text("Minimalist").tag("Minimalist")
                                     .font(.system(size: 11, weight: .medium))
                             }
                             .pickerStyle(MenuPickerStyle())

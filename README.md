@@ -25,6 +25,7 @@ Built natively in Swift and SwiftUI, AdvancedDock runs as a highly efficient bac
 *   **Aero Action Panel**: Quick window controls directly from the card (Close, Minimize, Maximize, Exit Full-Screen, Force Quit).
 *   **Window Snapping**: Snap windows to the left half, right half, or maximize them instantly with one click.
 *   **Customizable Grid**: Configure the switcher's grid layout (rows and columns) to fit your screen size and workspace preferences.
+*   **Customizable Layouts**: Toggle between **Standard** layout (sidebar, search bar, full grid) and **Minimalist** layout (clean horizontal row, hidden sidebar, and a search bar that appears dynamically only when typing starts).
 
 ### 2. Interactive Dock Previews
 *   Hover over any active Dock icon to see real-time floating thumbnails of that application's open windows.
