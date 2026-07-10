@@ -77,6 +77,8 @@ class WindowList {
         cacheLock.unlock()
     }
     static func getWindows(showAllSpacesOverride: Bool? = nil, showMinimizedOverride: Bool? = nil) -> [WindowInfo] {
+        let systemApps = ["Dock", "SystemUIServer", "WindowServer", "NotificationCenter", "ControlCenter", "Wallpaper", "Siri", "Spotlight", "TextInputMenuAgent", "TextInputSwitcher"]
+        
         // Gather onscreen Z-order rank from active space to sort raw lists in MRU order
         var onscreenZOrder: [CGWindowID: Int] = [:]
         let onscreenOptions = CGWindowListOption(arrayLiteral: .optionOnScreenOnly, .excludeDesktopElements)
@@ -205,7 +207,6 @@ class WindowList {
             }
             
             // Filter out common background/system overlays
-            let systemApps = ["Dock", "SystemUIServer", "WindowServer", "NotificationCenter", "ControlCenter", "Wallpaper", "Siri", "Spotlight", "TextInputMenuAgent", "TextInputSwitcher"]
             if systemApps.contains(ownerName) {
                 continue
             }
@@ -330,6 +331,32 @@ class WindowList {
         }
         windows = uniqueWindows
         
+        // Add placeholders for running applications that have no open windows (like native Cmd+Tab)
+        let activePIDs = Set(windows.map { $0.pid })
+        for app in NSWorkspace.shared.runningApplications {
+            guard app.activationPolicy == .regular else { continue }
+            let pid = app.processIdentifier
+            if !activePIDs.contains(pid) {
+                let placeholderID = UInt32(bitPattern: -Int32(pid))
+                let appName = app.localizedName ?? ""
+                if appName.isEmpty || systemApps.contains(appName) || appName == "AdvancedDock" {
+                    continue
+                }
+                
+                let placeholderWindow = WindowInfo(
+                    id: placeholderID,
+                    pid: pid,
+                    ownerName: appName,
+                    title: appName,
+                    bounds: CGRect.zero,
+                    appIcon: app.icon,
+                    isAXValid: false,
+                    isOnscreen: false
+                )
+                windows.append(placeholderWindow)
+            }
+        }
+        
         // SORT BY Z-ORDER RANK: Keep active space windows in MRU order, push other spaces/minimized to the end
         windows.sort { (w1, w2) -> Bool in
             let rank1 = onscreenZOrder[w1.id] ?? 999999
@@ -363,6 +390,10 @@ class WindowList {
     }
     
     static func getThumbnail(for windowID: CGWindowID) -> CGImage? {
+        if Int32(bitPattern: windowID) < 0 {
+            return nil
+        }
+        
         cacheLock.lock()
         if let cached = thumbnailCache[windowID], Date().timeIntervalSince(cached.timestamp) < 3.0 {
             cacheLock.unlock()
@@ -443,6 +474,11 @@ class WindowList {
         }
         
         app.activate(options: [.activateIgnoringOtherApps])
+        
+        // For placeholder windows (apps running with no open windows), activation is sufficient
+        if window.bounds == CGRect.zero {
+            return
+        }
         
         let appRef = AXUIElementCreateApplication(window.pid)
         
