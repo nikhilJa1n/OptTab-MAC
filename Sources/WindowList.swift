@@ -10,6 +10,7 @@ struct WindowInfo: Identifiable, Hashable {
     let bounds: CGRect
     let appIcon: NSImage?
     let isAXValid: Bool
+    let isOnscreen: Bool
     
     func hash(into hasher: inout Hasher) {
         hasher.combine(id)
@@ -298,19 +299,20 @@ class WindowList {
                 title: title.isEmpty ? ownerName : title,
                 bounds: bounds,
                 appIcon: appIcon,
-                isAXValid: isAXValid
+                isAXValid: isAXValid,
+                isOnscreen: isOnscreen
             )
             windows.append(window)
         }
         
-        // DEDUPLICATE TABS & HELPER WINDOWS: Keep all AX-valid windows. For non-AX-valid windows (tabs/helpers), only keep them if they don't overlap with already kept windows of the same app.
+        // DEDUPLICATE TABS & HELPER WINDOWS: Keep all AX-valid windows. For non-AX-valid windows (tabs/helpers), only keep them if they don't overlap with already kept windows of the same app on the same space.
         var uniqueWindows: [WindowInfo] = []
         var seenBoundsForPID = [pid_t: Set<String>]()
         
         // First pass: always keep AX-valid windows
         for window in windows {
             if window.isAXValid {
-                let boundsKey = "\(Int(window.bounds.origin.x))-\(Int(window.bounds.origin.y))-\(Int(window.bounds.size.width))-\(Int(window.bounds.size.height))"
+                let boundsKey = "\(window.isOnscreen)-\(Int(window.bounds.origin.x))-\(Int(window.bounds.origin.y))-\(Int(window.bounds.size.width))-\(Int(window.bounds.size.height))"
                 seenBoundsForPID[window.pid, default: []].insert(boundsKey)
                 uniqueWindows.append(window)
             }
@@ -319,7 +321,7 @@ class WindowList {
         // Second pass: for non-AX-valid windows, only keep them if their bounds have not been seen
         for window in windows {
             if !window.isAXValid {
-                let boundsKey = "\(Int(window.bounds.origin.x))-\(Int(window.bounds.origin.y))-\(Int(window.bounds.size.width))-\(Int(window.bounds.size.height))"
+                let boundsKey = "\(window.isOnscreen)-\(Int(window.bounds.origin.x))-\(Int(window.bounds.origin.y))-\(Int(window.bounds.size.width))-\(Int(window.bounds.size.height))"
                 if !seenBoundsForPID[window.pid, default: []].contains(boundsKey) {
                     seenBoundsForPID[window.pid, default: []].insert(boundsKey)
                     uniqueWindows.append(window)
@@ -519,17 +521,13 @@ class WindowList {
         }
         
         // Try immediately
-        if !tryRaise() {
-            // Background / Electron apps may not expose their windows immediately after activation.
-            // Retry with increasing delays to ensure the window is successfully raised.
-            let delays = [0.05, 0.15, 0.3, 0.5]
-            for delay in delays {
-                DispatchQueue.main.asyncAfter(deadline: .now() + delay) {
-                    if tryRaise() {
-                        // Successfully raised, stop further retries if scheduled
-                        return
-                    }
-                }
+        tryRaise()
+        
+        // Always schedule delayed raises unconditionally to defeat activation layout override race conditions (e.g. Chrome / Electron)
+        let delays = [0.05, 0.15, 0.35]
+        for delay in delays {
+            DispatchQueue.main.asyncAfter(deadline: .now() + delay) {
+                _ = tryRaise()
             }
         }
     }

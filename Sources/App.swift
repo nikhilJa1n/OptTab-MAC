@@ -223,21 +223,9 @@ class AppDelegate: NSObject, NSApplicationDelegate, HotkeyManagerDelegate {
             sortedWindows.sort { $0.title.localizedCaseInsensitiveCompare($1.title) == .orderedAscending }
         default:
             // "Recently Used"
-            sortedWindows.sort { (w1, w2) -> Bool in
-                let idx1 = mruWindowIDs.firstIndex(of: w1.id)
-                let idx2 = mruWindowIDs.firstIndex(of: w2.id)
-                if let i1 = idx1, let i2 = idx2 {
-                    return i1 < i2
-                } else if idx1 != nil {
-                    return true
-                } else if idx2 != nil {
-                    return false
-                }
-                // Fallback to original Z-order rank (which is rawWindows index)
-                let rank1 = rawWindows.firstIndex(where: { $0.id == w1.id }) ?? 999999
-                let rank2 = rawWindows.firstIndex(where: { $0.id == w2.id }) ?? 999999
-                return rank1 < rank2
-            }
+            // The raw Z-order from CGWindowList is already top-to-bottom (active to inactive),
+            // and we apply lastRaisedWindowID transition protection before calling sortWindows.
+            break
         }
         return sortedWindows
     }
@@ -247,28 +235,21 @@ class AppDelegate: NSObject, NSApplicationDelegate, HotkeyManagerDelegate {
         rawWindows = rawWindows.filter { !appState.excludedApps.contains($0.ownerName) }
         guard !rawWindows.isEmpty else { return ([], 0) }
         
-        // Determine previously active window ID using internal MRU list if available
-        var previouslyActiveWindowID: CGWindowID?
-        if mruWindowIDs.count > 1 {
-            for id in mruWindowIDs.dropFirst() {
-                if rawWindows.contains(where: { $0.id == id }) {
-                    previouslyActiveWindowID = id
-                    break
-                }
+        // Focus transition protection:
+        // If we recently switched windows and the OS window list has not updated its Z-order yet,
+        // manually put the last raised window at the front (index 0).
+        if Date().timeIntervalSince(lastRaisedTime) < 0.45, let raisedID = lastRaisedWindowID {
+            if let idx = rawWindows.firstIndex(where: { $0.id == raisedID }), idx > 0 {
+                let raisedWindow = rawWindows.remove(at: idx)
+                rawWindows.insert(raisedWindow, at: 0)
+                logMessage("[getSortedWindowsAndIndex] Applied focus transition protection: moved raised window \(raisedID) to front")
             }
         }
-        if previouslyActiveWindowID == nil {
-            previouslyActiveWindowID = rawWindows.count > 1 ? rawWindows[1].id : rawWindows[0].id
-        }
         
-        var sortedWindows = sortWindows(rawWindows)
+        // Target the previously active window (index 1 in Z-order).
+        let previouslyActiveWindowID = rawWindows.count > 1 ? rawWindows[1].id : rawWindows[0].id
         
-        
-        
-        let windowSortOrder = appState.windowSortOrder
-        logMessage("Sorting request. Preference: '\(windowSortOrder)'")
-        logMessage("  - Raw: " + rawWindows.map { "\($0.ownerName):\($0.title)" }.joined(separator: ", "))
-        logMessage("  - Sorted: " + sortedWindows.map { "\($0.ownerName):\($0.title)" }.joined(separator: ", "))
+        let sortedWindows = sortWindows(rawWindows)
         
         var targetIndex = 0
         if let idx = sortedWindows.firstIndex(where: { $0.id == previouslyActiveWindowID }) {
@@ -293,14 +274,15 @@ class AppDelegate: NSObject, NSApplicationDelegate, HotkeyManagerDelegate {
             return
         }
         
-        var sortedWindows = sortWindows(rawWindows)
+        // Focus transition protection:
+        if Date().timeIntervalSince(lastRaisedTime) < 0.45, let raisedID = lastRaisedWindowID {
+            if let idx = rawWindows.firstIndex(where: { $0.id == raisedID }), idx > 0 {
+                let raisedWindow = rawWindows.remove(at: idx)
+                rawWindows.insert(raisedWindow, at: 0)
+            }
+        }
         
-        
-        let windowSortOrder = appState.windowSortOrder
-        logMessage("Refresh active windows request. Preference: '\(windowSortOrder)'")
-        logMessage("  - Raw: " + rawWindows.map { "\($0.ownerName):\($0.title)" }.joined(separator: ", "))
-        logMessage("  - Sorted: " + sortedWindows.map { "\($0.ownerName):\($0.title)" }.joined(separator: ", "))
-        
+        let sortedWindows = sortWindows(rawWindows)
         activeWindows = sortedWindows
         
         if let prevID = previousSelectedID, let newIndex = activeWindows.firstIndex(where: { $0.id == prevID }) {
