@@ -224,9 +224,25 @@ class AppDelegate: NSObject, NSApplicationDelegate, HotkeyManagerDelegate {
             sortedWindows.sort { $0.title.localizedCaseInsensitiveCompare($1.title) == .orderedAscending }
         default:
             // "Recently Used"
-            // The raw Z-order from CGWindowList is already top-to-bottom (active to inactive),
-            // and we apply lastRaisedWindowID transition protection before calling sortWindows.
-            break
+            // Sort by their recency order in our custom tracked mruWindowIDs array.
+            // If both windows are present in mruWindowIDs, sort by their index ascending.
+            // If only one window is present, that window takes priority.
+            // If neither is present, maintain their relative original Z-order.
+            sortedWindows.sort { w1, w2 in
+                let idx1 = mruWindowIDs.firstIndex(of: w1.id)
+                let idx2 = mruWindowIDs.firstIndex(of: w2.id)
+                
+                switch (idx1, idx2) {
+                case (.some(let i1), .some(let i2)):
+                    return i1 < i2
+                case (.some, .none):
+                    return true
+                case (.none, .some):
+                    return false
+                case (.none, .none):
+                    return false // Keep original raw order
+                }
+            }
         }
         return sortedWindows
     }
