@@ -6,7 +6,7 @@
 .swiftpm/
 
 # Compiled App Bundle
-OptTab.app/
+*.app/
 
 # Compiled Installer
 *.dmg
