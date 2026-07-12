@@ -29,6 +29,26 @@ private func cleanTabTitle(_ title: String) -> String {
     return clean.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
 }
 
+private func titlesMatch(axTitle: String, windowTitle: String) -> Bool {
+    let cleanAX = axTitle.trimmingCharacters(in: .whitespacesAndNewlines)
+    let cleanWin = windowTitle.trimmingCharacters(in: .whitespacesAndNewlines)
+    if cleanAX.isEmpty || cleanWin.isEmpty { return false }
+    if cleanAX == cleanWin || cleanAX.contains(cleanWin) || cleanWin.contains(cleanAX) {
+        return true
+    }
+    
+    // Handle truncation with ellipsis "…"
+    if cleanWin.contains("…") {
+        let components = cleanWin.components(separatedBy: "…")
+                                 .map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
+                                 .filter { !$0.isEmpty }
+        if !components.isEmpty {
+            return components.allSatisfy { cleanAX.contains($0) }
+        }
+    }
+    return false
+}
+
 private func selectTabIfNeeded(element: AXUIElement, targetTitle: String) -> Bool {
     var roleVal: AnyObject?
     if AXUIElementCopyAttributeValue(element, kAXRoleAttribute as CFString, &roleVal) == .success,
@@ -70,6 +90,23 @@ private struct CachedThumbnail {
 class WindowList {
     private static var thumbnailCache: [CGWindowID: CachedThumbnail] = [:]
     private static let cacheLock = NSLock()
+    private static var raiseGeneration: Int = 0
+    
+    private static func logMessage(_ msg: String) {
+        let logPath = "/Users/nikhiljain/.gemini/antigravity/brain/feb90e27-a96e-4b36-8783-aee805b013b9/scratch/action_debug.log"
+        let formattedMsg = "\(Date()): [WindowList] \(msg)\n"
+        if let data = formattedMsg.data(using: .utf8) {
+            if FileManager.default.fileExists(atPath: logPath) {
+                if let fileHandle = FileHandle(forWritingAtPath: logPath) {
+                    fileHandle.seekToEndOfFile()
+                    fileHandle.write(data)
+                    fileHandle.closeFile()
+                }
+            } else {
+                try? data.write(to: URL(fileURLWithPath: logPath))
+            }
+        }
+    }
     
     static func clearThumbnailCache() {
         cacheLock.lock()
@@ -322,10 +359,17 @@ class WindowList {
         // Second pass: for non-AX-valid windows, only keep them if their bounds have not been seen
         for window in windows {
             if !window.isAXValid {
-                let boundsKey = "\(window.isOnscreen)-\(Int(window.bounds.origin.x))-\(Int(window.bounds.origin.y))-\(Int(window.bounds.size.width))-\(Int(window.bounds.size.height))"
-                if !seenBoundsForPID[window.pid, default: []].contains(boundsKey) {
-                    seenBoundsForPID[window.pid, default: []].insert(boundsKey)
+                // If it has a custom title (different from ownerName), it is a real physical window (not a helper/tab)
+                let isRealWindow = window.title != window.ownerName
+                
+                if isRealWindow {
                     uniqueWindows.append(window)
+                } else {
+                    let boundsKey = "\(window.isOnscreen)-\(Int(window.bounds.origin.x))-\(Int(window.bounds.origin.y))-\(Int(window.bounds.size.width))-\(Int(window.bounds.size.height))"
+                    if !seenBoundsForPID[window.pid, default: []].contains(boundsKey) {
+                        seenBoundsForPID[window.pid, default: []].insert(boundsKey)
+                        uniqueWindows.append(window)
+                    }
                 }
             }
         }
@@ -468,15 +512,23 @@ class WindowList {
     }
     
     static func raiseWindow(window: WindowInfo) {
+        // Increment generation to cancel any stale delayed raises from previous calls
+        raiseGeneration += 1
+        let currentGen = raiseGeneration
+        
+        logMessage("raiseWindow called for target '\(window.ownerName):\(window.title)' (id=\(window.id), pid=\(window.pid)) gen=\(currentGen)")
         // 1. Activate the owning application
         guard let app = NSRunningApplication(processIdentifier: window.pid) else {
+            logMessage("  Error: Could not retrieve NSRunningApplication for pid \(window.pid)")
             return
         }
         
         app.activate(options: [.activateIgnoringOtherApps])
+        logMessage("  activate() called for \(app.localizedName ?? "")")
         
         // For placeholder windows (apps running with no open windows), activation is sufficient
         if window.bounds == CGRect.zero {
+            logMessage("  Placeholder window targeted, returning early after activation")
             return
         }
         
@@ -484,15 +536,45 @@ class WindowList {
         
         @discardableResult
         func tryRaise() -> Bool {
+            var axElements: [AXUIElement] = []
+            
             var windowsValue: AnyObject?
-            guard AXUIElementCopyAttributeValue(appRef, kAXWindowsAttribute as CFString, &windowsValue) == .success,
-                  let axWindows = windowsValue as? [AXUIElement] else {
+            if AXUIElementCopyAttributeValue(appRef, kAXWindowsAttribute as CFString, &windowsValue) == .success,
+               let axWindows = windowsValue as? [AXUIElement] {
+                axElements.append(contentsOf: axWindows)
+            }
+            
+            var childrenValue: AnyObject?
+            if AXUIElementCopyAttributeValue(appRef, kAXChildrenAttribute as CFString, &childrenValue) == .success,
+               let axChildren = childrenValue as? [AXUIElement] {
+                axElements.append(contentsOf: axChildren)
+            }
+            
+            var axWindows: [AXUIElement] = []
+            for element in axElements {
+                var roleValue: AnyObject?
+                if AXUIElementCopyAttributeValue(element, kAXRoleAttribute as CFString, &roleValue) == .success,
+                   let role = roleValue as? String, role == kAXWindowRole {
+                    axWindows.append(element)
+                }
+            }
+            
+            logMessage("  tryRaise: found \(axWindows.count) AXWindow elements")
+            
+            if axWindows.isEmpty {
                 return false
             }
             
             // Match using private but reliable _AXUIElementGetWindow
             for axWindow in axWindows {
-                if let id = getWindowID(from: axWindow), id == window.id {
+                let id = getWindowID(from: axWindow)
+                var titleValue: AnyObject?
+                AXUIElementCopyAttributeValue(axWindow, kAXTitleAttribute as CFString, &titleValue)
+                let axTitle = titleValue as? String ?? ""
+                logMessage("    Checking AXWindow ID: \(id ?? 0) | Title: \(axTitle)")
+                
+                if let id = id, id == window.id {
+                    logMessage("      Match found by WindowID! Raising window.")
                     // If minimized, unminimize first
                     var minimizedValue: AnyObject?
                     if AXUIElementCopyAttributeValue(axWindow, kAXMinimizedAttribute as CFString, &minimizedValue) == .success,
@@ -503,6 +585,8 @@ class WindowList {
                     // Set as main and focused window for cross-space switching
                     AXUIElementSetAttributeValue(appRef, kAXMainWindowAttribute as CFString, axWindow)
                     AXUIElementSetAttributeValue(appRef, kAXFocusedWindowAttribute as CFString, axWindow)
+                    AXUIElementSetAttributeValue(axWindow, kAXMainAttribute as CFString, kCFBooleanTrue)
+                    AXUIElementSetAttributeValue(axWindow, kAXFocusedAttribute as CFString, kCFBooleanTrue)
                     
                     AXUIElementPerformAction(axWindow, kAXRaiseAction as CFString)
                     return true
@@ -515,9 +599,12 @@ class WindowList {
                 AXUIElementCopyAttributeValue(axWindow, kAXTitleAttribute as CFString, &titleValue)
                 let axTitle = titleValue as? String ?? ""
                 
-                if !axTitle.isEmpty && (axTitle == window.title || window.title.contains(axTitle)) {
+                if !axTitle.isEmpty && titlesMatch(axTitle: axTitle, windowTitle: window.title) {
+                    logMessage("      Match found by title Fallback! '\(axTitle)' vs '\(window.title)'. Raising.")
                     AXUIElementSetAttributeValue(appRef, kAXMainWindowAttribute as CFString, axWindow)
                     AXUIElementSetAttributeValue(appRef, kAXFocusedWindowAttribute as CFString, axWindow)
+                    AXUIElementSetAttributeValue(axWindow, kAXMainAttribute as CFString, kCFBooleanTrue)
+                    AXUIElementSetAttributeValue(axWindow, kAXFocusedAttribute as CFString, kCFBooleanTrue)
                     AXUIElementPerformAction(axWindow, kAXRaiseAction as CFString)
                     return true
                 }
@@ -526,6 +613,7 @@ class WindowList {
             // Fallback 2: Tab matching (find tab elements inside window and switch tabs)
             for axWindow in axWindows {
                 if selectTabIfNeeded(element: axWindow, targetTitle: window.title) {
+                    logMessage("      Match found by tab fallback! Raising.")
                     var minimizedValue: AnyObject?
                     if AXUIElementCopyAttributeValue(axWindow, kAXMinimizedAttribute as CFString, &minimizedValue) == .success,
                        let isMin = minimizedValue as? Bool, isMin {
@@ -534,13 +622,25 @@ class WindowList {
                     
                     AXUIElementSetAttributeValue(appRef, kAXMainWindowAttribute as CFString, axWindow)
                     AXUIElementSetAttributeValue(appRef, kAXFocusedWindowAttribute as CFString, axWindow)
+                    AXUIElementSetAttributeValue(axWindow, kAXMainAttribute as CFString, kCFBooleanTrue)
+                    AXUIElementSetAttributeValue(axWindow, kAXFocusedAttribute as CFString, kCFBooleanTrue)
                     AXUIElementPerformAction(axWindow, kAXRaiseAction as CFString)
                     return true
                 }
             }
             
             // Fallback 3: Raise the first window of the application to prevent silent failure
-            if let firstWindow = axWindows.first {
+            // Skip for Chromium apps — Chrome's AX tree doesn't expose all windows,
+            // so raising the first AX window would bring up the WRONG window.
+            // Instead, return false to let the AppleScript fallback handle it.
+            let chromiumApps = ["Google Chrome", "Google Chrome Canary", "Chromium", "Microsoft Edge", "Brave Browser", "Arc", "Vivaldi", "Opera"]
+            let isChromiumApp = chromiumApps.contains(window.ownerName)
+            
+            if !isChromiumApp, let firstWindow = axWindows.first {
+                var titleValue: AnyObject?
+                AXUIElementCopyAttributeValue(firstWindow, kAXTitleAttribute as CFString, &titleValue)
+                let firstTitle = titleValue as? String ?? ""
+                logMessage("      Fallback 3: Raising first window of app (Title: \(firstTitle))")
                 var minimizedValue: AnyObject?
                 if AXUIElementCopyAttributeValue(firstWindow, kAXMinimizedAttribute as CFString, &minimizedValue) == .success,
                    let isMin = minimizedValue as? Bool, isMin {
@@ -549,20 +649,115 @@ class WindowList {
                 
                 AXUIElementSetAttributeValue(appRef, kAXMainWindowAttribute as CFString, firstWindow)
                 AXUIElementSetAttributeValue(appRef, kAXFocusedWindowAttribute as CFString, firstWindow)
+                AXUIElementSetAttributeValue(firstWindow, kAXMainAttribute as CFString, kCFBooleanTrue)
+                AXUIElementSetAttributeValue(firstWindow, kAXFocusedAttribute as CFString, kCFBooleanTrue)
                 AXUIElementPerformAction(firstWindow, kAXRaiseAction as CFString)
                 return true
             }
             
+            if isChromiumApp {
+                logMessage("      tryRaise: Chromium app — skipping Fallback 3, deferring to AppleScript.")
+            }
+            
+            logMessage("      tryRaise: No match found.")
+            return false
+        }
+        
+        // AppleScript fallback for Chromium-based apps (Chrome, Edge, Brave, Arc, etc.)
+        // Chrome's AX tree doesn't expose all physical windows, but AppleScript can switch them by title.
+        func tryAppleScriptRaise() -> Bool {
+            let chromiumApps = ["Google Chrome", "Google Chrome Canary", "Chromium", "Microsoft Edge", "Brave Browser", "Arc", "Vivaldi", "Opera"]
+            guard chromiumApps.contains(window.ownerName) else { return false }
+            
+            // Build a partial title for matching (CGWindowList truncates with "…")
+            let targetTitle = window.title
+            
+            // Use the app's scripting name (usually same as display name for Chrome)
+            let appScriptName: String
+            switch window.ownerName {
+            case "Google Chrome Canary": appScriptName = "Google Chrome Canary"
+            case "Microsoft Edge": appScriptName = "Microsoft Edge"
+            case "Brave Browser": appScriptName = "Brave Browser"
+            default: appScriptName = window.ownerName
+            }
+            
+            // AppleScript: iterate windows in Chrome, find the one whose title contains our target fragments,
+            // then set its index to 1 to bring it to the front
+            var titleFragments: [String] = []
+            if targetTitle.contains("…") {
+                titleFragments = targetTitle.components(separatedBy: "…")
+                    .map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
+                    .filter { !$0.isEmpty }
+            } else {
+                titleFragments = [targetTitle]
+            }
+            
+            // Build an AppleScript condition from fragments
+            var conditions: [String] = []
+            for fragment in titleFragments {
+                let escaped = fragment.replacingOccurrences(of: "\\", with: "\\\\")
+                    .replacingOccurrences(of: "\"", with: "\\\"")
+                conditions.append("winTitle contains \"\(escaped)\"")
+            }
+            let conditionStr = conditions.joined(separator: " and ")
+            
+            let script = """
+            tell application "\(appScriptName)"
+                set winCount to count of windows
+                repeat with i from 1 to winCount
+                    set winTitle to title of window i
+                    if \(conditionStr) then
+                        set index of window i to 1
+                        return "ok"
+                    end if
+                end repeat
+                return "not_found"
+            end tell
+            """
+            
+            logMessage("      AppleScript fallback: Running script for '\(appScriptName)' with condition: \(conditionStr)")
+            
+            if let appleScript = NSAppleScript(source: script) {
+                var errorInfo: NSDictionary?
+                let result = appleScript.executeAndReturnError(&errorInfo)
+                let resultStr = result.stringValue ?? "nil"
+                logMessage("      AppleScript result: \(resultStr)")
+                if resultStr == "ok" {
+                    return true
+                }
+                if let err = errorInfo {
+                    logMessage("      AppleScript error: \(err)")
+                }
+            }
             return false
         }
         
         // Try immediately
-        tryRaise()
+        let raised = tryRaise()
         
-        // Always schedule delayed raises unconditionally to defeat activation layout override race conditions (e.g. Chrome / Electron)
-        let delays = [0.05, 0.15, 0.35]
+        // For Chromium apps where AX can't find the target window, use AppleScript on a background thread
+        if !raised {
+            // Run AppleScript on a background thread to avoid blocking the UI
+            DispatchQueue.global(qos: .userInteractive).async {
+                // Check if this raise request is still current
+                guard currentGen == raiseGeneration else {
+                    logMessage("      AppleScript cancelled — stale generation \(currentGen) vs \(raiseGeneration)")
+                    return
+                }
+                _ = tryAppleScriptRaise()
+            }
+        }
+        
+        // Schedule delayed AX retries on main thread (lightweight, non-blocking)
+        // These handle apps that need time to expose AX windows after activate()
+        // Each callback checks raiseGeneration to cancel if a newer raise supersedes this one.
+        let delays = [0.1, 0.25, 0.5]
         for delay in delays {
             DispatchQueue.main.asyncAfter(deadline: .now() + delay) {
+                guard currentGen == raiseGeneration else {
+                    logMessage("  Delayed tryRaise cancelled — stale generation \(currentGen) vs \(raiseGeneration)")
+                    return
+                }
                 _ = tryRaise()
             }
         }

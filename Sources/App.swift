@@ -21,6 +21,7 @@ class AppDelegate: NSObject, NSApplicationDelegate, HotkeyManagerDelegate {
     var lastRaisedWindowID: CGWindowID?
     var previousActiveWindowIDBeforeSwitch: CGWindowID?
     var lastRaisedTime: Date = Date.distantPast
+    var switcherOpenTime: Date = Date.distantPast
     
     func applicationDidFinishLaunching(_ notification: Notification) {
         // Disable stdout buffering for diagnostic logging
@@ -235,6 +236,13 @@ class AppDelegate: NSObject, NSApplicationDelegate, HotkeyManagerDelegate {
         rawWindows = rawWindows.filter { !appState.excludedApps.contains($0.ownerName) }
         guard !rawWindows.isEmpty else { return ([], 0) }
         
+        // Log raw Z-order from CGWindowList
+        logMessage("[getSortedWindowsAndIndex] Raw Z-order (top \(min(5, rawWindows.count))):")
+        for i in 0..<min(5, rawWindows.count) {
+            logMessage("  [\(i)] \(rawWindows[i].ownerName):\(rawWindows[i].title) (id=\(rawWindows[i].id))")
+        }
+        logMessage("  lastRaisedWindowID=\(lastRaisedWindowID ?? 0) previousActiveWindowIDBeforeSwitch=\(previousActiveWindowIDBeforeSwitch ?? 0)")
+        
         // Focus transition protection:
         // If we recently switched windows and the OS window list has not updated its Z-order yet,
         // manually put the last raised window at the front (index 0).
@@ -242,12 +250,26 @@ class AppDelegate: NSObject, NSApplicationDelegate, HotkeyManagerDelegate {
             if let idx = rawWindows.firstIndex(where: { $0.id == raisedID }), idx > 0 {
                 let raisedWindow = rawWindows.remove(at: idx)
                 rawWindows.insert(raisedWindow, at: 0)
-                logMessage("[getSortedWindowsAndIndex] Applied focus transition protection: moved raised window \(raisedID) to front")
+                logMessage("[getSortedWindowsAndIndex] Applied focus transition protection: moved raised window \(raisedID) from idx \(idx) to front")
             }
         }
         
-        // Target the previously active window (index 1 in Z-order).
-        let previouslyActiveWindowID = rawWindows.count > 1 ? rawWindows[1].id : rawWindows[0].id
+        // Determine the "previously active" window to highlight.
+        // Priority 1: Use our own tracked previousActiveWindowIDBeforeSwitch — this is the
+        //   window the user was on BEFORE the last switch, which is what they expect to
+        //   toggle back to. CGWindowList Z-order can be inaccurate because activate() 
+        //   reshuffles other windows from the same app.
+        // Priority 2: Fall back to CGWindowList index 1 (second in Z-order).
+        var previouslyActiveWindowID: CGWindowID
+        if let prevID = previousActiveWindowIDBeforeSwitch,
+           rawWindows.contains(where: { $0.id == prevID }) {
+            previouslyActiveWindowID = prevID
+            logMessage("[getSortedWindowsAndIndex] Using tracked previousActiveWindowIDBeforeSwitch=\(prevID)")
+        } else {
+            previouslyActiveWindowID = rawWindows.count > 1 ? rawWindows[1].id : rawWindows[0].id
+            logMessage("[getSortedWindowsAndIndex] Falling back to CGWindowList index 1=\(previouslyActiveWindowID)")
+        }
+        logMessage("[getSortedWindowsAndIndex] previouslyActiveWindowID=\(previouslyActiveWindowID) (\(rawWindows.first(where: { $0.id == previouslyActiveWindowID })?.ownerName ?? "?"))")
         
         let sortedWindows = sortWindows(rawWindows)
         
@@ -259,6 +281,8 @@ class AppDelegate: NSObject, NSApplicationDelegate, HotkeyManagerDelegate {
         if backward && sortedWindows.count > 1 {
             targetIndex = sortedWindows.count - 1
         }
+        
+        logMessage("[getSortedWindowsAndIndex] targetIndex=\(targetIndex) → \(sortedWindows[targetIndex].ownerName):\(sortedWindows[targetIndex].title)")
         
         return (sortedWindows, targetIndex)
     }
@@ -396,6 +420,8 @@ class AppDelegate: NSObject, NSApplicationDelegate, HotkeyManagerDelegate {
             guard !activeWindows.isEmpty else { return }
             
             currentIndex = targetIdx
+            switcherOpenTime = Date()
+            logMessage("[hotkeyOptionTabPressed] OPEN switcher: currentIndex=\(currentIndex) → \(activeWindows[currentIndex].ownerName):\(activeWindows[currentIndex].title)")
             
             switcherWindow?.show(
                 appState: appState,
@@ -410,6 +436,7 @@ class AppDelegate: NSObject, NSApplicationDelegate, HotkeyManagerDelegate {
             // Already open, cycle highlighted window index
             guard !activeWindows.isEmpty else { return }
             
+            let oldIndex = currentIndex
             if backward {
                 currentIndex -= 1
                 if currentIndex < 0 {
@@ -421,6 +448,7 @@ class AppDelegate: NSObject, NSApplicationDelegate, HotkeyManagerDelegate {
                     currentIndex = 0
                 }
             }
+            logMessage("[hotkeyOptionTabPressed] CYCLE: \(oldIndex) → \(currentIndex) → \(activeWindows[currentIndex].ownerName):\(activeWindows[currentIndex].title)")
             
             switcherWindow?.update(
                 appState: appState,
@@ -534,6 +562,7 @@ class AppDelegate: NSObject, NSApplicationDelegate, HotkeyManagerDelegate {
             
             if currentIndex >= 0 && currentIndex < activeWindows.count {
                 let target = activeWindows[currentIndex]
+                logMessage("[hotkeyOptionReleased] COMMIT: currentIndex=\(currentIndex) → \(target.ownerName):\(target.title) (id=\(target.id))")
                 previousActiveWindowIDBeforeSwitch = mruWindowIDs.first
                 mruWindowIDs.removeAll(where: { $0 == target.id })
                 mruWindowIDs.insert(target.id, at: 0)

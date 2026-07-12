@@ -94,10 +94,17 @@ class HotkeyManager {
             }
         } else if type == .keyDown {
             let keyCode = event.getIntegerValueField(.keyboardEventKeycode)
+            let isKeyRepeat = event.getIntegerValueField(.keyboardEventAutorepeat) != 0
             
             // Custom Switcher Hotkey
             if keyCode == appState.hotkeyKeyCode {
                 if (cmdRequired == isCmd) && (optRequired == isOpt) && (ctrlRequired == isCtrl) {
+                    // Suppress key repeat events when the switcher is already visible.
+                    // This prevents keyboard auto-repeat from cycling past the intended target
+                    // during a quick Option+Tab gesture. Only real keypresses cycle.
+                    if isKeyRepeat && (self.delegate?.isSwitcherVisible() ?? false) {
+                        return nil // Swallow repeat
+                    }
                     DispatchQueue.main.async { [weak self] in
                         self?.delegate?.hotkeyOptionTabPressed(backward: isShift)
                     }

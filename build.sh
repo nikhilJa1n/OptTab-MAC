@@ -48,6 +48,8 @@ cat > "${APP_DIR}/Contents/Info.plist" <<EOF
     <true/>
     <key>NSHighResolutionCapable</key>
     <true/>
+    <key>NSAppleEventsUsageDescription</key>
+    <string>AdvancedDock needs to send Apple Events to switch between windows of applications like Google Chrome.</string>
 </dict>
 </plist>
 EOF
