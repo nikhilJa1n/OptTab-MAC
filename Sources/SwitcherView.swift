@@ -353,9 +353,12 @@ struct CardThumbnailView: View {
     @State private var dragOffset = CGSize.zero
     @State private var isFadingOut = false
     @State private var rotationAngle = 0.0
+    @State private var isHovered = false
     
     var borderColor: Color {
-        return isSelected ? .blue : Color.white.opacity(0.12)
+        if isSelected { return .blue }
+        if isHovered { return Color.white.opacity(0.4) }
+        return Color.white.opacity(0.12)
     }
     
     var borderWidth: CGFloat {
@@ -363,11 +366,15 @@ struct CardThumbnailView: View {
     }
     
     var shadowColor: Color {
-        return isSelected ? Color.blue.opacity(0.4) : .clear
+        if isSelected { return Color.blue.opacity(0.4) }
+        if isHovered { return Color.black.opacity(0.3) }
+        return .clear
     }
     
     var shadowRadius: CGFloat {
-        return isSelected ? 8 : 0
+        if isSelected { return 8 }
+        if isHovered { return 4 }
+        return 0
     }
     
     var body: some View {
@@ -420,7 +427,7 @@ struct CardThumbnailView: View {
             }
             
             // Action Buttons capsule bar (Close, Minimize, Maximize, Force Quit) + Layout Snapping
-            if isSelected {
+            if isSelected || isHovered {
                 VStack {
                     HStack {
                         Spacer()
@@ -448,10 +455,11 @@ struct CardThumbnailView: View {
                 .stroke(borderColor, lineWidth: borderWidth)
                 .shadow(color: shadowColor, radius: shadowRadius)
         )
-        .scaleEffect(isSelected ? 1.08 : 1.0)
+        .scaleEffect(isSelected ? 1.08 : (isHovered ? 1.04 : 1.0))
         .offset(y: dragOffset.height)
         .opacity(isFadingOut ? 0.0 : 1.0)
         .animation(.spring(response: 0.25, dampingFraction: 0.7), value: isSelected)
+        .animation(.spring(response: 0.25, dampingFraction: 0.7), value: isHovered)
         .gesture(
             DragGesture()
                 .onChanged { gesture in
@@ -479,6 +487,11 @@ struct CardThumbnailView: View {
         )
         .onTapGesture {
             onClick()
+        }
+        .onHover { hovering in
+            withAnimation(.easeOut(duration: 0.15)) {
+                self.isHovered = hovering
+            }
         }
     }
     
