@@ -474,7 +474,6 @@ struct SettingsSection<Content: View>: View {
 
 struct GeneralTab: View {
     @ObservedObject var state: AppState
-    @State private var selectedGridApp = ""
     
     var body: some View {
         ScrollView(.vertical, showsIndicators: false) {
@@ -594,82 +593,7 @@ struct GeneralTab: View {
                         }
                     }
                 }
-                
-                SettingsSection("Window Grid Presets") {
-                    VStack(alignment: .leading, spacing: 8) {
-                        Text("Select a running application to instantly snap all of its open windows into a structured layout preset.")
-                            .font(.system(size: 9.5))
-                            .foregroundColor(.white.opacity(0.45))
-                            .lineLimit(2)
-                        
-                        HStack(spacing: 12) {
-                            Picker("", selection: $selectedGridApp) {
-                                Text("Select App...").tag("")
-                                ForEach(state.getRunningApps()) { app in
-                                    Text(app.name).tag(app.name)
-                                }
-                            }
-                            .pickerStyle(DefaultPickerStyle())
-                            .frame(width: 160)
-                            
-                            if !selectedGridApp.isEmpty {
-                                HStack(spacing: 6) {
-                                    Button(action: {
-                                        WindowList.applyPresetLayout(preset: "2x2 Grid", forAppName: selectedGridApp)
-                                    }) {
-                                        Text("2x2 Grid")
-                                            .font(.system(size: 9.5, weight: .bold))
-                                            .foregroundColor(.white)
-                                            .padding(.horizontal, 8)
-                                            .padding(.vertical, 4)
-                                            .background(Color.white.opacity(0.04))
-                                            .cornerRadius(4)
-                                            .overlay(
-                                                RoundedRectangle(cornerRadius: 4)
-                                                    .stroke(Color.white.opacity(0.08), lineWidth: 0.5)
-                                            )
-                                    }
-                                    .buttonStyle(PlainButtonStyle())
-                                    
-                                    Button(action: {
-                                        WindowList.applyPresetLayout(preset: "3-Column Split", forAppName: selectedGridApp)
-                                    }) {
-                                        Text("3-Col")
-                                            .font(.system(size: 9.5, weight: .bold))
-                                            .foregroundColor(.white)
-                                            .padding(.horizontal, 8)
-                                            .padding(.vertical, 4)
-                                            .background(Color.white.opacity(0.04))
-                                            .cornerRadius(4)
-                                            .overlay(
-                                                RoundedRectangle(cornerRadius: 4)
-                                                    .stroke(Color.white.opacity(0.08), lineWidth: 0.5)
-                                            )
-                                    }
-                                    .buttonStyle(PlainButtonStyle())
-                                    
-                                    Button(action: {
-                                        WindowList.applyPresetLayout(preset: "70/30 Split", forAppName: selectedGridApp)
-                                    }) {
-                                        Text("70/30")
-                                            .font(.system(size: 9.5, weight: .bold))
-                                            .foregroundColor(.white)
-                                            .padding(.horizontal, 8)
-                                            .padding(.vertical, 4)
-                                            .background(Color.white.opacity(0.04))
-                                            .cornerRadius(4)
-                                            .overlay(
-                                                RoundedRectangle(cornerRadius: 4)
-                                                    .stroke(Color.white.opacity(0.08), lineWidth: 0.5)
-                                            )
-                                    }
-                                    .buttonStyle(PlainButtonStyle())
-                                }
-                            }
-                        }
-                        .padding(.top, 2)
-                    }
-                }
+
                 
                 HStack {
                     Spacer()
