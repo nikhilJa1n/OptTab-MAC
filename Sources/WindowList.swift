@@ -213,8 +213,26 @@ class WindowList {
             }
         }
         
-        var windows: [WindowInfo] = []
+        // Pre-scan to identify applications (PIDs) that have at least one window with a non-empty title.
+        // This helps us filter out empty-titled utility/helper windows from those apps.
         let currentPid = ProcessInfo.processInfo.processIdentifier
+        var pidsWithNonEmptyTitle = Set<pid_t>()
+        for info in windowListInfo {
+            guard let layer = info[kCGWindowLayer as String] as? Int, layer == 0 else { continue }
+            guard let windowID = info[kCGWindowNumber as String] as? CGWindowID else { continue }
+            guard let pid = info[kCGWindowOwnerPID as String] as? pid_t else { continue }
+            if pid == currentPid { continue }
+            
+            var title = (info[kCGWindowName as String] as? String ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
+            if title.isEmpty, let axTitle = axWindowTitles[windowID] {
+                title = axTitle
+            }
+            if !title.isEmpty {
+                pidsWithNonEmptyTitle.insert(pid)
+            }
+        }
+        
+        var windows: [WindowInfo] = []
         
         for info in windowListInfo {
             // Get window layer. Normal apps are in layer 0.
@@ -278,6 +296,12 @@ class WindowList {
             var title = (info[kCGWindowName as String] as? String ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
             if title.isEmpty, let axTitle = axWindowTitles[windowID] {
                 title = axTitle
+            }
+            
+            // If the window has an empty title, but the app already has at least one window with a non-empty title,
+            // we discard this helper window.
+            if title.isEmpty && pidsWithNonEmptyTitle.contains(pid) {
+                continue
             }
             
             if title.isEmpty {
