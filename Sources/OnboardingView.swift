@@ -29,6 +29,10 @@ class AppState: ObservableObject {
     @Published var isOptionKeyPressed = false
     @Published var isTabKeyPressed = false
     
+    @Published var groupTabbedWindows: Bool {
+        didSet { UserDefaults.standard.set(groupTabbedWindows, forKey: "groupTabbedWindows") }
+    }
+    
     @Published var enableArrowNavigation: Bool {
         didSet { UserDefaults.standard.set(enableArrowNavigation, forKey: "enableArrowNavigation") }
     }
@@ -110,6 +114,7 @@ class AppState: ObservableObject {
         
         self.useGridLayout = UserDefaults.standard.object(forKey: "useGridLayout") as? Bool ?? false
         
+        self.groupTabbedWindows = UserDefaults.standard.object(forKey: "groupTabbedWindows") as? Bool ?? true
         self.hideMenuIcon = UserDefaults.standard.object(forKey: "hideMenuIcon") as? Bool ?? false
         self.startAtLogin = (SMAppService.mainApp.status == .enabled)
         
@@ -146,7 +151,9 @@ class AppState: ObservableObject {
         
         self.startAtLogin = false
         self.hideMenuIcon = false
+        self.groupTabbedWindows = true
         UserDefaults.standard.removeObject(forKey: "hideMenuIcon")
+        UserDefaults.standard.removeObject(forKey: "groupTabbedWindows")
     }
     
     func updateStartAtLogin() {
@@ -491,6 +498,15 @@ struct GeneralTab: View {
                         title: "Grid Layout Mode",
                         description: "Arrange switcher thumbnails in a 2D multi-row grid instead of a single paginated horizontal row.",
                         isOn: $state.useGridLayout
+                    )
+                    
+                    Divider()
+                        .background(Color.white.opacity(0.04))
+                    
+                    ToggleRow(
+                        title: "Merge Tabbed Windows",
+                        description: "Only show the active tab/window when multiple windows of the same application are tabbed or overlapping.",
+                        isOn: $state.groupTabbedWindows
                     )
                 }
                 

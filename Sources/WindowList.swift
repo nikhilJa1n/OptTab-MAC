@@ -343,32 +343,44 @@ class WindowList {
             windows.append(window)
         }
         
-        // DEDUPLICATE TABS & HELPER WINDOWS: Keep all AX-valid windows. For non-AX-valid windows (tabs/helpers), only keep them if they don't overlap with already kept windows of the same app on the same space.
+        // DEDUPLICATE TABS & HELPER WINDOWS: Keep only unique windows based on user preference
+        let groupTabbedWindows = UserDefaults.standard.object(forKey: "groupTabbedWindows") as? Bool ?? true
+        
         var uniqueWindows: [WindowInfo] = []
         var seenBoundsForPID = [pid_t: Set<String>]()
         
-        // First pass: always keep AX-valid windows
-        for window in windows {
-            if window.isAXValid {
-                let boundsKey = "\(window.isOnscreen)-\(Int(window.bounds.origin.x))-\(Int(window.bounds.origin.y))-\(Int(window.bounds.size.width))-\(Int(window.bounds.size.height))"
-                seenBoundsForPID[window.pid, default: []].insert(boundsKey)
-                uniqueWindows.append(window)
-            }
-        }
-        
-        // Second pass: for non-AX-valid windows, only keep them if their bounds have not been seen
-        for window in windows {
-            if !window.isAXValid {
-                // If it has a custom title (different from ownerName), it is a real physical window (not a helper/tab)
-                let isRealWindow = window.title != window.ownerName
-                
-                if isRealWindow {
+        if groupTabbedWindows {
+            // Deduplicate all windows (both AX-valid and non-AX-valid) of the same app that have the exact same bounds.
+            // Since the source window list is in front-to-back Z-order, the first one encountered is the active/visible tab.
+            for window in windows {
+                let boundsKey = "\(Int(window.bounds.origin.x))-\(Int(window.bounds.origin.y))-\(Int(window.bounds.size.width))-\(Int(window.bounds.size.height))"
+                if !seenBoundsForPID[window.pid, default: []].contains(boundsKey) {
+                    seenBoundsForPID[window.pid, default: []].insert(boundsKey)
                     uniqueWindows.append(window)
-                } else {
+                }
+            }
+        } else {
+            // Original logic: Keep all AX-valid windows. For non-AX-valid windows (tabs/helpers),
+            // only keep them if they don't overlap with already kept windows of the same app on the same space.
+            for window in windows {
+                if window.isAXValid {
                     let boundsKey = "\(window.isOnscreen)-\(Int(window.bounds.origin.x))-\(Int(window.bounds.origin.y))-\(Int(window.bounds.size.width))-\(Int(window.bounds.size.height))"
-                    if !seenBoundsForPID[window.pid, default: []].contains(boundsKey) {
-                        seenBoundsForPID[window.pid, default: []].insert(boundsKey)
+                    seenBoundsForPID[window.pid, default: []].insert(boundsKey)
+                    uniqueWindows.append(window)
+                }
+            }
+            
+            for window in windows {
+                if !window.isAXValid {
+                    let isRealWindow = window.title != window.ownerName
+                    if isRealWindow {
                         uniqueWindows.append(window)
+                    } else {
+                        let boundsKey = "\(window.isOnscreen)-\(Int(window.bounds.origin.x))-\(Int(window.bounds.origin.y))-\(Int(window.bounds.size.width))-\(Int(window.bounds.size.height))"
+                        if !seenBoundsForPID[window.pid, default: []].contains(boundsKey) {
+                            seenBoundsForPID[window.pid, default: []].insert(boundsKey)
+                            uniqueWindows.append(window)
+                        }
                     }
                 }
             }
