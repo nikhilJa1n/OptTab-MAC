@@ -112,6 +112,12 @@ class AppDelegate: NSObject, NSApplicationDelegate, HotkeyManagerDelegate {
             name: NSWorkspace.activeSpaceDidChangeNotification,
             object: nil
         )
+        NSWorkspace.shared.notificationCenter.addObserver(
+            self,
+            selector: #selector(handleSystemWake),
+            name: NSWorkspace.didWakeNotification,
+            object: nil
+        )
         
         // Initialize MRU with current active window
         updateMRUWithActiveWindow()
@@ -199,6 +205,14 @@ class AppDelegate: NSObject, NSApplicationDelegate, HotkeyManagerDelegate {
         hotkeyManager?.start()
         if appState.enableDockHoverPreviews {
             dockHoverMonitor?.start()
+        }
+    }
+    
+    @objc private func handleSystemWake() {
+        logMessage("[App] System wake detected — restarting HotkeyManager")
+        hotkeyManager?.stop()
+        if appState.isAccessibilityGranted {
+            hotkeyManager?.start()
         }
     }
     
