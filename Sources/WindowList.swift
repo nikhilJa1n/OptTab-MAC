@@ -90,7 +90,32 @@ private struct CachedThumbnail {
 class WindowList {
     private static var thumbnailCache: [CGWindowID: CachedThumbnail] = [:]
     private static let cacheLock = NSLock()
+    private static var iconCache: [pid_t: NSImage] = [:]
+    private static let iconCacheLock = NSLock()
     private static var raiseGeneration: Int = 0
+    
+    private static func getAppIcon(for pid: pid_t) -> NSImage? {
+        iconCacheLock.lock()
+        if let cached = iconCache[pid] {
+            iconCacheLock.unlock()
+            return cached
+        }
+        iconCacheLock.unlock()
+        
+        var appIcon: NSImage? = nil
+        if let runningApp = NSRunningApplication(processIdentifier: pid) {
+            appIcon = runningApp.icon
+        }
+        if appIcon == nil {
+            appIcon = NSWorkspace.shared.icon(for: .application)
+        }
+        if let icon = appIcon {
+            iconCacheLock.lock()
+            iconCache[pid] = icon
+            iconCacheLock.unlock()
+        }
+        return appIcon
+    }
     
     private static func logMessage(_ msg: String) {
         AppLogger.log("[WindowList] \(msg)")
@@ -138,17 +163,10 @@ class WindowList {
                 let appRef = AXUIElementCreateApplication(app.processIdentifier)
                 
                 var axElements: [AXUIElement] = []
-                
                 var windowsValue: AnyObject?
                 if AXUIElementCopyAttributeValue(appRef, kAXWindowsAttribute as CFString, &windowsValue) == .success,
                    let axWindows = windowsValue as? [AXUIElement] {
                     axElements.append(contentsOf: axWindows)
-                }
-                
-                var childrenValue: AnyObject?
-                if AXUIElementCopyAttributeValue(appRef, kAXChildrenAttribute as CFString, &childrenValue) == .success,
-                   let axChildren = childrenValue as? [AXUIElement] {
-                    axElements.append(contentsOf: axChildren)
                 }
                 
                 for axWindow in axElements {
@@ -347,14 +365,8 @@ class WindowList {
                 }
             }
             
-            // Get app icon
-            var appIcon: NSImage? = nil
-            if let runningApp = NSRunningApplication(processIdentifier: pid) {
-                appIcon = runningApp.icon
-            }
-            if appIcon == nil {
-                appIcon = NSWorkspace.shared.icon(for: .application)
-            }
+            // Get cached app icon
+            let appIcon = getAppIcon(for: pid)
             
             let window = WindowInfo(
                 id: windowID,
@@ -502,37 +514,21 @@ class WindowList {
         }
         cacheLock.unlock()
         
-        var capturedImage: CGImage?
+        // Fast Path 1: Instant CGWindowListCreateImage snapshot (~1ms)
+        var capturedImage: CGImage? = CGWindowListCreateImage(
+            .null,
+            .optionIncludingWindow,
+            windowID,
+            [.boundsIgnoreFraming, .bestResolution]
+        )
         
-        // Fast Path: Try capturing with onScreenWindowsOnly: true (very fast, covers active space)
-        let semFast = DispatchSemaphore(value: 0)
-        SCShareableContent.getExcludingDesktopWindows(false, onScreenWindowsOnly: true) { content, error in
-            guard let content = content, error == nil,
-                  let scWindow = content.windows.first(where: { $0.windowID == windowID }) else {
-                semFast.signal()
-                return
-            }
-            
-            let filter = SCContentFilter(desktopIndependentWindow: scWindow)
-            let config = SCStreamConfiguration()
-            config.showsCursor = false
-            config.width = 340
-            config.height = 212
-            
-            SCScreenshotManager.captureImage(contentFilter: filter, configuration: config) { image, err in
-                capturedImage = image
-                semFast.signal()
-            }
-        }
-        _ = semFast.wait(timeout: .now() + 0.15)
-        
-        // Slow Path: Fallback to capturing with onScreenWindowsOnly: false (covers minimized / other spaces)
+        // Slow Path 2: If CGWindowList image is nil (e.g. offscreen/other space window), fallback to ScreenCaptureKit
         if capturedImage == nil {
-            let semSlow = DispatchSemaphore(value: 0)
-            SCShareableContent.getExcludingDesktopWindows(false, onScreenWindowsOnly: false) { content, error in
+            let semFast = DispatchSemaphore(value: 0)
+            SCShareableContent.getExcludingDesktopWindows(false, onScreenWindowsOnly: true) { content, error in
                 guard let content = content, error == nil,
                       let scWindow = content.windows.first(where: { $0.windowID == windowID }) else {
-                    semSlow.signal()
+                    semFast.signal()
                     return
                 }
                 
@@ -544,19 +540,10 @@ class WindowList {
                 
                 SCScreenshotManager.captureImage(contentFilter: filter, configuration: config) { image, err in
                     capturedImage = image
-                    semSlow.signal()
+                    semFast.signal()
                 }
             }
-            _ = semSlow.wait(timeout: .now() + 0.65)
-        }
-        
-        if capturedImage == nil {
-            capturedImage = CGWindowListCreateImage(
-                .null,
-                .optionIncludingWindow,
-                windowID,
-                [.boundsIgnoreFraming, .bestResolution]
-            )
+            _ = semFast.wait(timeout: .now() + 0.15)
         }
         
         if let img = capturedImage {
