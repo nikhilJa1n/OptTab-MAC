@@ -959,17 +959,44 @@ struct DiagnosticsTab: View {
     }
     
     private func sendLogsToDev() {
+        AppLogger.log("User initiated 'Send Logs to Dev'")
         let fileURL = AppLogger.logFileURL
+        let email = "nikhilj505050@gmail.com"
+        let subject = "OptTab Diagnostics & Logs"
+        let fileExists = FileManager.default.fileExists(atPath: fileURL.path)
+        let itemsToShare: [Any] = fileExists ? [fileURL] : ["No log file found at \(fileURL.path)"]
+
+        var handled = false
         
-        if let sharingService = NSSharingService(named: .composeEmail) {
-            sharingService.recipients = ["nikhilj505050@gmail.com"]
-            sharingService.subject = "OptTab Diagnostics & Logs"
+        if let sharingService = NSSharingService(named: .composeEmail),
+           sharingService.canPerform(withItems: itemsToShare) {
+            sharingService.recipients = [email]
+            sharingService.subject = subject
+            sharingService.perform(withItems: itemsToShare)
+            handled = true
+        }
+        
+        if !handled {
+            // Fallback 1: Open mailto URL
+            let subjectEncoded = subject.addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed) ?? ""
+            let bodyText = fileExists ? "Please find attached the log file revealed in Finder (or pasted from clipboard).\n\nLog Path: \(fileURL.path)" : "No log file was found."
+            let bodyEncoded = bodyText.addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed) ?? ""
             
-            if FileManager.default.fileExists(atPath: fileURL.path) {
-                sharingService.perform(withItems: [fileURL])
-            } else {
-                sharingService.perform(withItems: ["No log file found."])
+            if let mailtoURL = URL(string: "mailto:\(email)?subject=\(subjectEncoded)&body=\(bodyEncoded)") {
+                NSWorkspace.shared.open(mailtoURL)
             }
+            
+            // Fallback 2: Copy log content or path to pasteboard
+            let pasteboard = NSPasteboard.general
+            pasteboard.clearContents()
+            if fileExists, let logContent = try? String(contentsOf: fileURL, encoding: .utf8) {
+                pasteboard.setString(logContent, forType: .string)
+            } else {
+                pasteboard.setString(fileURL.path, forType: .string)
+            }
+            
+            // Fallback 3: Reveal log file in Finder
+            revealLogsInFinder()
         }
     }
     
