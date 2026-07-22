@@ -37,15 +37,17 @@ echo "=== Creating ZIP Archive (OptTab.zip) ==="
 rm -f OptTab.zip
 zip -r -y -q OptTab.zip OptTab.app
 
-# Update update.json configuration
-echo "=== Updating update.json ==="
-cat > update.json <<EOF
+# Update update.json configuration only if explicit release notes are passed
+if [ -n "$3" ]; then
+    echo "=== Updating update.json ==="
+    cat > update.json <<EOF
 {
   "version": "$VERSION",
   "downloadUrl": "https://github.com/$OWNER/$REPO/releases/download/v$VERSION/OptTab.dmg",
-  "changelog": "Released version $VERSION."
+  "changelog": "$3"
 }
 EOF
+fi
 
 # Summary
 echo "=== Release Packages Created Successfully ==="

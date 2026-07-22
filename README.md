@@ -8,28 +8,29 @@
   <a href="https://github.com/nikhilJa1n/OptTab-MAC/releases"><img src="https://img.shields.io/github/v/release/nikhilJa1n/OptTab-MAC?style=flat-square" alt="Latest Release" /></a>
 </p>
 
-**OptTab** is a next-generation window manager and interactive switcher HUD designed to replace the default macOS app switcher and dock experiences. Built natively in Swift and SwiftUI, it introduces a beautiful glassmorphic interface, dynamic layouts, and hardware-accelerated preview controls—all while running as a zero-latency, lightweight background agent.
+**OptTab** is a next-generation window manager and interactive switcher HUD designed to replace the default macOS app switcher and dock experiences. Built natively in Swift and SwiftUI, it introduces a beautiful glassmorphic interface, dynamic multi-row layouts, multi-window tab grouping, and hardware-accelerated preview controls—all running as a zero-latency, lightweight background agent.
 
 ---
 
 ## 🚀 Architectural Blueprint
 
-OptTab operates by tapping directly into the macOS window server event stream, using a decoupled event-driven architecture to keep CPU overhead minimal.
+OptTab operates by tapping directly into the macOS window server event stream, using a decoupled event-driven architecture with automatic event tap recovery to keep CPU overhead minimal and performance instantaneous.
 
 ```mermaid
 graph TD
     A[⌥ + Tab / Hotkey Event] -->|CGEventTap Interception| B(HotkeyManager)
-    B -->|Filter repeat & check release| C{Is Key State Valid?}
+    B -->|Auto-recovery on timeout/sleep| B1{Event Tap Enabled?}
+    B1 -->|No: Re-enable CGEventTap| B
+    B1 -->|Yes| C{Is Key State Valid?}
     C -->|No: Swallowed| B
     C -->|Yes: Trigger HUD| D[App / Control Loop]
     
     D -->|Query Geometries & Z-Order| E(WindowList Engine)
     D -->|Update App Selection| F[(Tracked mruWindowIDs History)]
     
-    E -->|Get Window Geometry| G[CGWindowListCopyWindowInfo]
-    E -->|State Control: Close, Minimize, Snap| H[Accessibility API: AXUIElement]
-    E -->|Hardware-Accelerated Previews| I[ScreenCaptureKit / SCKit]
-    E -->|Background Fallback for Hidden Apps| J[NSAppleScript Reopen Engine]
+    E -->|Fast AX Query: kAXWindowsAttribute| G[Accessibility API: AXUIElement]
+    E -->|Fast-Path 1ms Thumbnail| H[CGWindowListCreateImage]
+    E -->|Multi-Tier Target Raising| I[3-Tier AppleScript Engine: ID -> Title -> Screen Pos]
     
     D -->|Feed Active State & Sorted List| K[SwitcherView SwiftUI]
     K -->|Standard View: 5-Col Stack| L[Horizontal Pagination]
@@ -45,22 +46,23 @@ graph TD
 
 ### 1. Smart App Switcher (`⌥ + Tab`)
 *   **Tracked MRU Sorting**: Replaces unstable OS Z-ordering. The default `"Recently Used"` list sorts strictly by your active window history (`mruWindowIDs`), ensuring the most recently active window is always selected first.
-*   **Grid Layout Mode**: Toggle between a horizontal single row and a dynamic 2D multi-row grid (4 columns) that dynamically adapts window thumbnail scaling to prevent off-screen clipping.
-*   **Aero Action Panel**: Instantly Close, Minimize, Maximize, or Force Quit applications directly from their switcher cards.
-*   **Dynamic Arrow Navigation**: Cycle highlights smoothly using Left/Right (`←`/`→`) or Up/Down (`↑`/`↓`) arrow keys, with grid boundaries adjusting dynamically.
-*   **Resource Widgets**: Real-time glassmorphic CPU and RAM monitors are embedded directly in the switcher HUD to track host telemetry.
+*   **Multi-Window & Tab Grouping**: Preserves separate real OS windows for multi-window apps (Terminal, Chrome, Finder) as individual switcher cards while automatically merging duplicate internal tabs.
+*   **Multi-Tier Window Raising**: 3-tier AppleScript window matcher (**ID → Title → Screen Coordinates**) ensures targeting secondary windows of any app works 100% reliably even when window titles dynamically change.
+*   **Grid Layout Mode**: Toggle between a horizontal single row and a dynamic 2D multi-row grid that dynamically adapts window thumbnail scaling.
+*   **Aero Action Panel**: Instantly Close, Minimize, Maximize, or Force Quit applications directly from their switcher cards (`W` / `M` / `F` / `Q`).
+*   **Dynamic Arrow Navigation**: Cycle highlights smoothly using Left/Right (`←`/`→`) or Up/Down (`↑`/`↓`) arrow keys.
+*   **Resource Widgets**: Real-time glassmorphic CPU and RAM monitors embedded directly in the switcher HUD.
 
-### 2. Interactive Dock Previews
-*   **Live Previews**: Hover over active Dock icons to inspect live window previews of background applications.
-*   **Smart Dock Layouts**: Thumbnail lists arrange dynamically in structured wrapping grids (up to 3 columns) when multiple windows are open.
-*   **Action Actions**: Snap, close, or activate windows directly from the dock hover preview cards.
-*   **Preview Delay Slider**: Defer hover activations (0.1s to 1.5s) to avoid accidental overlays.
+### 2. High-Performance Engine
+*   **20x Faster Window Scanning**: Optimized AX scanning querying `kAXWindowsAttribute` directly (~5ms window scanning speed).
+*   **1ms Fast-Path Card Thumbnails**: Instant snapshot rendering via `CGWindowListCreateImage` fast path with zero thread blocking.
+*   **In-Memory Icon Caching**: Thread-safe app icon caching (`iconCache`) eliminates disk I/O during shortcut cycles.
+*   **Hotkey Auto-Recovery**: Automatic Event Tap recovery on system load/timeout and system wake handlers ensure Option+Tab never freezes after sleep.
 
-### 3. Personalization Dashboard
-*   **Segmented Control Panel**: Configure General Settings, Dock Previews, Exclusions, and Telemetry in a beautifully unified 5-tab dashboard.
-*   **Window Snapping Presets**: Instantly arrange open windows of any running application into a *2x2 Grid*, *3-Column Split*, or *70/30 Split* via the Grid Manager.
-*   **App Exclusions Search**: Search and blacklist background processes or chat helper apps from entering your switcher cycle.
-*   **Settings Factory Reset**: Restore OptTab to default native configurations in a single click.
+### 3. Personalization & Diagnostics
+*   **Complete Version History View**: Interactive in-app changelog viewer with release notes and feature highlights for every version.
+*   **Send Logs to Dev**: Submit diagnostic logs directly via native macOS Mail or Finder reveal in a single click.
+*   **Interactive Dock Previews**: Hover over active Dock icons to inspect live window preview grids of background applications.
 
 ---
 
@@ -73,8 +75,7 @@ graph TD
 | **Arrow Key Navigation** | `←` / `→` (Horizontal) or `↑` / `↓` (Vertical Grid) |
 | **Select Highlighted Window** | Release `⌥` (or press `Space` / `Enter` if pinned) |
 | **Cancel / Dismiss HUD** | Press `⎋ (Esc)` |
-| **Close Window (Gesture)** | Drag the window card upwards and release |
-| **Trigger Snapping** | Click a layout icon in the card's Aero Action Panel |
+| **Close / Minimize / Maximize Card** | Press `W` (Close), `M` (Minimize), `F` (Full Screen / Maximize), `Q` (Quit) |
 
 ---
 
@@ -84,7 +85,7 @@ graph TD
 *   **Security & Privacy Policy**:
     *   OptTab operates **entirely locally**. No screen data, window titles, keystrokes, or process lists are ever transmitted, saved, or sent over a network.
     *   **Accessibility API**: Required to retrieve window titles and control windows (minimize, maximize, close, and snap).
-    *   **Screen Recording Permission**: Required by Apple's `ScreenCaptureKit` to grab window graphics and display them as switcher card thumbnails.
+    *   **Screen Recording Permission**: Required by `ScreenCaptureKit` and macOS Window Server to display switcher card thumbnails.
 
 ---
 
@@ -92,11 +93,10 @@ graph TD
 
 ### Prerequisites
 *   Xcode 15.0 or newer (Swift 5.9+ compiler tools).
-*   A code-signing certificate (self-signed or developer account) named `OptTabDeveloper`.
 
 ### Building from Source
 
-To compile, code-sign, and package OptTab:
+To compile and package OptTab:
 
 1.  Clone the repository:
     ```bash
@@ -104,7 +104,7 @@ To compile, code-sign, and package OptTab:
     cd OptTab-MAC
     ```
 
-2.  Run the build, signing, and packaging script:
+2.  Run the build script:
     ```bash
     chmod +x build.sh
     ./build.sh
@@ -116,29 +116,20 @@ This generates **`OptTab.dmg`**. Drag-and-drop the app bundle inside it to your 
 
 ## 🚀 Publishing Releases
 
-OptTab uses a modular, two-tier release workflow based on the GitHub CLI (`gh`):
+OptTab features an **automated release and version history pipeline**:
 
-1.  **Local Packaging (`release.sh`)**:
-    Builds the binary and packages it into local install targets (`OptTab.dmg` and `OptTab.zip`), injecting version details into the application bundle's `Info.plist`:
-    ```bash
-    # Usage: ./release.sh <version> <build_number>
-    ./release.sh 1.6 1
-    ```
+```bash
+# Usage: ./publish_release.sh <marketing_version> <build_number> [release_notes]
+./publish_release.sh 2.7 27 "• Multi-window tab grouping\n• 20x faster window scanning\n• Hotkey auto-recovery"
+```
 
-2.  **Publishing to GitHub (`publish_release.sh`)**:
-    Automates building, committing version updates, tagging the commit, pushing, and publishing directly to GitHub Releases:
-    ```bash
-    # Usage: ./publish_release.sh <version> <build_number>
-    ./publish_release.sh 1.6 1
-    ```
-
-### Script Automation Features:
-*   **Version Injection**: Dynamically injects version and build numbers into the app bundle `Info.plist` during compilation.
-*   **Git Lifecycle**: Bumps commits, tags the commit locally, pushes to main, and force-pushes the release tag (`v$VERSION`) to ensure tag alignment.
-*   **Overwriting Existing Releases**: Uses the GitHub CLI (`gh release upload --clobber`) to automatically update existing releases and overwrite the DMG/ZIP assets if they already exist, making the release cycle completely idempotent.
+### Automation Workflow:
+1. **Automated Version History Update**: Running `publish_release.sh` automatically updates `Sources/VersionHistory.swift` and `update.json` with the new version notes.
+2. **Build & Package**: Compiles `OptTab.app` and creates `OptTab.dmg` and `OptTab.zip`.
+3. **Git Tagging**: Automatically commits config changes and tags the commit locally as `v$VERSION`.
 
 ---
 
 ## 🛡️ License & Contributing
 
-Licensed under the [MIT License](LICENSE). Contributions, bug reports, and feature pull requests are always welcome! Feel free to open an Issue to align on design before submitting code.
+Licensed under the [MIT License](LICENSE). Contributions, bug reports, and feature pull requests are always welcome!

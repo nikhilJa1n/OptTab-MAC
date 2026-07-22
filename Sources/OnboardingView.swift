@@ -78,6 +78,7 @@ class AppState: ObservableObject {
     
     @Published var cpuUsage: Double = 0.0
     @Published var ramUsage: (used: Double, total: Double) = (0.0, 16.0 * 1024 * 1024 * 1024)
+    @Published var isShowingVersionHistory: Bool = false
     
     @Published var dockHoverDelay: Double {
         didSet { UserDefaults.standard.set(dockHoverDelay, forKey: "dockHoverDelay") }
@@ -399,6 +400,9 @@ struct OnboardingView: View {
                 }
             }
         )
+        .sheet(isPresented: $state.isShowingVersionHistory) {
+            VersionHistoryView()
+        }
     }
 }
 
@@ -942,6 +946,33 @@ struct DiagnosticsTab: View {
                                     RoundedRectangle(cornerRadius: 5)
                                         .stroke(Color.white.opacity(0.1), lineWidth: 0.5)
                                 )
+                            }
+                            .buttonStyle(PlainButtonStyle())
+                        }
+                    }
+                }
+                
+                SettingsSection("Version & Release Notes") {
+                    VStack(alignment: .leading, spacing: 8) {
+                        Text("Inspect current version details, release notes, and full changelog history.")
+                            .font(.system(size: 9.5))
+                            .foregroundColor(.white.opacity(0.45))
+                        
+                        HStack(spacing: 12) {
+                            Button(action: {
+                                state.isShowingVersionHistory = true
+                            }) {
+                                HStack(spacing: 6) {
+                                    Image(systemName: "clock.arrow.circlepath")
+                                        .font(.system(size: 11))
+                                    Text("View Version History")
+                                        .font(.system(size: 10, weight: .bold))
+                                }
+                                .foregroundColor(.white)
+                                .padding(.horizontal, 12)
+                                .padding(.vertical, 6)
+                                .background(Color.purple.opacity(0.8))
+                                .cornerRadius(5)
                             }
                             .buttonStyle(PlainButtonStyle())
                         }

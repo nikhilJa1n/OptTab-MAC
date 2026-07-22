@@ -74,17 +74,32 @@ class UpdateChecker {
     private func showUpdateAvailableAlert(info: UpdateInfo) {
         DispatchQueue.main.async {
             let alert = NSAlert()
-            alert.messageText = "New Update Available!"
-            alert.informativeText = "Version \(info.version) is now available (You have \(Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? "1.0")).\n\nChangelog:\n\(info.changelog)"
+            alert.messageText = "✨ OptTab v\(info.version) is Available!"
+            let currentVer = Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? "1.0"
+            
+            alert.informativeText = """
+            A new version of OptTab is ready for download.
+            Current Installed Version: v\(currentVer)
+            New Release Version: v\(info.version)
+            
+            ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+            WHAT'S NEW IN VERSION \(info.version):
+            ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+            \(info.changelog)
+            """
             alert.alertStyle = .informational
-            alert.addButton(withTitle: "Download Now")
-            alert.addButton(withTitle: "Later")
+            alert.addButton(withTitle: "Download Update")
+            alert.addButton(withTitle: "Version History")
+            alert.addButton(withTitle: "Remind Me Later")
             
             let response = alert.runModal()
             if response == .alertFirstButtonReturn {
                 if let url = URL(string: info.downloadUrl) {
                     NSWorkspace.shared.open(url)
                 }
+            } else if response == .alertSecondButtonReturn {
+                // Open Version History sheet/window
+                NotificationCenter.default.post(name: Notification.Name("showVersionHistory"), object: nil)
             }
         }
     }
