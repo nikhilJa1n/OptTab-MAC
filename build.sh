@@ -101,9 +101,12 @@ echo "=== DMG created successfully at ${DMG_FILE} ==="
 # Automatically install and relaunch the app if not packaging a release
 if [ "$SKIP_RELAUNCH" != "true" ]; then
     echo "=== Installing and Relaunching ${APP_NAME}.app ==="
-    killall "${APP_NAME}" || true
+    killall "${APP_NAME}" 2>/dev/null || true
+    sleep 1
     rm -rf "/Applications/${APP_NAME}.app"
     cp -R "${APP_DIR}" "/Applications/"
+    /System/Library/Frameworks/CoreServices.framework/Frameworks/LaunchServices.framework/Support/lsregister -f "/Applications/${APP_NAME}.app" 2>/dev/null || true
+    sleep 0.5
     open "/Applications/${APP_NAME}.app"
     echo "=== ${APP_NAME}.app successfully installed and launched! ==="
 fi

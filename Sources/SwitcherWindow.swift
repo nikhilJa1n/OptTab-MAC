@@ -100,16 +100,6 @@ class SwitcherWindow: NSPanel {
     }
     
     private func logMessage(_ msg: String) {
-        let logPath = "/Users/nikhiljain/.gemini/antigravity/brain/feb90e27-a96e-4b36-8783-aee805b013b9/scratch/action_debug.log"
-        let formattedMsg = "\(Date()): [SwitcherWindow] \(msg)\n"
-        if let data = formattedMsg.data(using: .utf8) {
-            if FileManager.default.fileExists(atPath: logPath) {
-                if let fileHandle = FileHandle(forWritingAtPath: logPath) {
-                    fileHandle.seekToEndOfFile()
-                    fileHandle.write(data)
-                    fileHandle.closeFile()
-                }
-            }
-        }
+        AppLogger.log("[SwitcherWindow] \(msg)")
     }
 }

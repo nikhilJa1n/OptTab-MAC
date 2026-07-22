@@ -1,6 +1,7 @@
 import SwiftUI
 import Combine
 import ServiceManagement
+import AppKit
 
 struct RunningAppInfo: Identifiable, Hashable {
     let id = UUID()
@@ -897,6 +898,55 @@ struct DiagnosticsTab: View {
                         .padding(.vertical, 4)
                     }
                 }
+                
+                SettingsSection("Diagnostic Logs") {
+                    VStack(alignment: .leading, spacing: 8) {
+                        Text("If you encounter any issues, you can submit the diagnostic logs directly to the developer for debugging.")
+                            .font(.system(size: 9.5))
+                            .foregroundColor(.white.opacity(0.45))
+                            .lineLimit(2)
+                        
+                        HStack(spacing: 12) {
+                            Button(action: {
+                                sendLogsToDev()
+                            }) {
+                                HStack(spacing: 6) {
+                                    Image(systemName: "envelope.fill")
+                                        .font(.system(size: 11))
+                                    Text("Send Logs to Dev")
+                                        .font(.system(size: 10, weight: .bold))
+                                }
+                                .foregroundColor(.white)
+                                .padding(.horizontal, 12)
+                                .padding(.vertical, 6)
+                                .background(Color.blue.opacity(0.8))
+                                .cornerRadius(5)
+                            }
+                            .buttonStyle(PlainButtonStyle())
+                            
+                            Button(action: {
+                                revealLogsInFinder()
+                            }) {
+                                HStack(spacing: 6) {
+                                    Image(systemName: "folder.fill")
+                                        .font(.system(size: 11))
+                                    Text("Reveal Log File")
+                                        .font(.system(size: 10, weight: .bold))
+                                }
+                                .foregroundColor(.white.opacity(0.7))
+                                .padding(.horizontal, 12)
+                                .padding(.vertical, 6)
+                                .background(Color.white.opacity(0.06))
+                                .cornerRadius(5)
+                                .overlay(
+                                    RoundedRectangle(cornerRadius: 5)
+                                        .stroke(Color.white.opacity(0.1), lineWidth: 0.5)
+                                )
+                            }
+                            .buttonStyle(PlainButtonStyle())
+                        }
+                    }
+                }
             }
             .padding(20)
         }
@@ -905,6 +955,32 @@ struct DiagnosticsTab: View {
         }
         .onDisappear {
             state.stopStatsMonitoring()
+        }
+    }
+    
+    private func sendLogsToDev() {
+        let fileURL = AppLogger.logFileURL
+        
+        if let sharingService = NSSharingService(named: .composeEmail) {
+            sharingService.recipients = ["nikhilj505050@gmail.com"]
+            sharingService.subject = "OptTab Diagnostics & Logs"
+            
+            if FileManager.default.fileExists(atPath: fileURL.path) {
+                sharingService.perform(withItems: [fileURL])
+            } else {
+                sharingService.perform(withItems: ["No log file found."])
+            }
+        }
+    }
+    
+    private func revealLogsInFinder() {
+        let fileURL = AppLogger.logFileURL
+        
+        if FileManager.default.fileExists(atPath: fileURL.path) {
+            NSWorkspace.shared.activateFileViewerSelecting([fileURL])
+        } else {
+            let parentDir = fileURL.deletingLastPathComponent()
+            NSWorkspace.shared.selectFile(nil, inFileViewerRootedAtPath: parentDir.path)
         }
     }
 }

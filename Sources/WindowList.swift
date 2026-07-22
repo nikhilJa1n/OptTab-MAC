@@ -93,19 +93,7 @@ class WindowList {
     private static var raiseGeneration: Int = 0
     
     private static func logMessage(_ msg: String) {
-        let logPath = "/Users/nikhiljain/.gemini/antigravity/brain/feb90e27-a96e-4b36-8783-aee805b013b9/scratch/action_debug.log"
-        let formattedMsg = "\(Date()): [WindowList] \(msg)\n"
-        if let data = formattedMsg.data(using: .utf8) {
-            if FileManager.default.fileExists(atPath: logPath) {
-                if let fileHandle = FileHandle(forWritingAtPath: logPath) {
-                    fileHandle.seekToEndOfFile()
-                    fileHandle.write(data)
-                    fileHandle.closeFile()
-                }
-            } else {
-                try? data.write(to: URL(fileURLWithPath: logPath))
-            }
-        }
+        AppLogger.log("[WindowList] \(msg)")
     }
     
     static func clearThumbnailCache() {
@@ -1003,19 +991,7 @@ class WindowList {
     }
     
     private static func logAction(_ msg: String) {
-        let logPath = "/Users/nikhiljain/.gemini/antigravity/brain/feb90e27-a96e-4b36-8783-aee805b013b9/scratch/action_debug.log"
-        let formattedMsg = "\(Date()): \(msg)\n"
-        if let data = formattedMsg.data(using: .utf8) {
-            if FileManager.default.fileExists(atPath: logPath) {
-                if let fh = FileHandle(forWritingAtPath: logPath) {
-                    fh.seekToEndOfFile()
-                    fh.write(data)
-                    fh.closeFile()
-                }
-            } else {
-                try? data.write(to: URL(fileURLWithPath: logPath))
-            }
-        }
+        AppLogger.log(msg)
     }
 }
 
