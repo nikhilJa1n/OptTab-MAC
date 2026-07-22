@@ -376,22 +376,29 @@ class WindowList {
         var seenBoundsForPID = [pid_t: Set<String>]()
         
         if groupTabbedWindows {
-            // Deduplicate windows of the same app that significantly overlap (>85% overlap area).
-            // macOS tabs share the same window frame but may report slightly different bounds due to
-            // sub-pixel rendering, retina scaling, or timing differences in CGWindowList queries.
-            // Using overlap detection instead of exact bounds matching handles these edge cases.
+            // Deduplicate non-AX-valid windows that have nearly identical bounds to an already-kept window.
+            // AX-valid windows are always kept — they are real, user-facing windows (e.g., 3 separate
+            // maximized Chrome windows). Non-AX-valid windows with matching bounds are tab/helper
+            // duplicates that macOS reports separately in CGWindowList but share the same frame.
+            // We use a tolerance of 20px to handle sub-pixel/retina differences.
+            let tolerance: CGFloat = 20.0
             var seenBoundsListForPID = [pid_t: [CGRect]]()
             
             for window in windows {
+                // Always keep AX-valid windows — they are real, separate windows
+                if window.isAXValid {
+                    seenBoundsListForPID[window.pid, default: []].append(window.bounds)
+                    uniqueWindows.append(window)
+                    continue
+                }
+                
+                // For non-AX-valid windows, check if they duplicate an existing window's bounds
                 let dominated = seenBoundsListForPID[window.pid, default: []].contains { existingRect in
-                    let intersection = existingRect.intersection(window.bounds)
-                    guard !intersection.isNull else { return false }
-                    let intersectionArea = intersection.width * intersection.height
-                    let windowArea = window.bounds.width * window.bounds.height
-                    let existingArea = existingRect.width * existingRect.height
-                    guard windowArea > 0, existingArea > 0 else { return false }
-                    // Consider them the same tab/window if overlap exceeds 85% of either window
-                    return intersectionArea / windowArea > 0.85 || intersectionArea / existingArea > 0.85
+                    let dX = abs(existingRect.origin.x - window.bounds.origin.x)
+                    let dY = abs(existingRect.origin.y - window.bounds.origin.y)
+                    let dW = abs(existingRect.width - window.bounds.width)
+                    let dH = abs(existingRect.height - window.bounds.height)
+                    return dX <= tolerance && dY <= tolerance && dW <= tolerance && dH <= tolerance
                 }
                 
                 if !dominated {
