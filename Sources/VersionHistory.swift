@@ -14,9 +14,22 @@ public struct VersionRelease: Identifiable {
 public struct VersionHistory {
     public static let releases: [VersionRelease] = [
         VersionRelease(
+            version: "3.1",
+            releaseDate: "August 2026",
+            isCurrent: true,
+            summary: "Improve app activation logic; enhance thumbnail loading behavior",
+            features: [
+                "Improve app activation logic; enhance thumbnail loading behavior",
+                "Enhance thumbnail loading and display in DockPreviewView and SwitcherView with improved caching and UI adjustments"
+            ],
+            fixes: [
+                
+            ]
+        ),
+                VersionRelease(
             version: "3.0",
             releaseDate: "July 2026",
-            isCurrent: true,
+            isCurrent: false,
             summary: "Enhance thumbnail loading and display in DockPreviewView and SwitcherView with improved caching and UI adjustments",
             features: [
                 "Enhance thumbnail loading and display in DockPreviewView and SwitcherView with improved caching and UI adjustments",
