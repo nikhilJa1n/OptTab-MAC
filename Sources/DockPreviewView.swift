@@ -184,7 +184,7 @@ struct DockPreviewCard: View {
         .onAppear {
             loadThumbnail()
         }
-        .onChange(of: window.id) { _ in
+        .onChange(of: window.id) {
             thumbnail = nil
             loadThumbnail()
         }

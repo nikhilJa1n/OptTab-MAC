@@ -148,7 +148,7 @@ class AppDelegate: NSObject, NSApplicationDelegate, HotkeyManagerDelegate {
         
         // Activate the target app
         if let app = NSRunningApplication(processIdentifier: window.pid) {
-            app.activate(options: [.activateIgnoringOtherApps])
+            app.activate()
             logMessage("[handleWindowAction] activate() called")
         } else {
             logMessage("[handleWindowAction] NSRunningApplication failed for pid=\(window.pid)")

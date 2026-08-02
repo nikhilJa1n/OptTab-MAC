@@ -626,7 +626,7 @@ class WindowList {
             return
         }
         
-        app.activate(options: [.activateIgnoringOtherApps])
+        app.activate()
         logMessage("  activate() called for \(app.localizedName ?? "")")
         
         // For placeholder windows (apps running with no open windows), activation is sufficient
@@ -651,7 +651,7 @@ class WindowList {
             AXUIElementPerformAction(axWindow, kAXRaiseAction as CFString)
             
             // Activate app AFTER updating AX attributes so macOS brings the selected window forward
-            app.activate(options: [.activateIgnoringOtherApps])
+            app.activate()
             AXUIElementPerformAction(axWindow, kAXRaiseAction as CFString)
         }
         

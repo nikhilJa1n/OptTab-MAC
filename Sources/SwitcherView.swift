@@ -201,7 +201,7 @@ struct SwitcherView: View {
                             }
                             .frame(width: CGFloat(contentWidth + 28), height: CGFloat(displayGridHeight + 24))
                             .clipped()
-                            .onChange(of: currentIndex) { newIndex in
+                            .onChange(of: currentIndex) { _, newIndex in
                                 let maxVisibleItems = cols * Int(maxAllowedRows)
                                 withAnimation(.spring(response: 0.2, dampingFraction: 0.85)) {
                                     if newIndex < maxVisibleItems {
@@ -382,11 +382,11 @@ struct WindowCard: View {
         .onAppear {
             loadThumbnail()
         }
-        .onChange(of: refreshToken) { _ in
+        .onChange(of: refreshToken) {
             thumbnail = nil
             loadThumbnail()
         }
-        .onChange(of: window.id) { _ in
+        .onChange(of: window.id) {
             thumbnail = nil
             loadThumbnail()
         }
