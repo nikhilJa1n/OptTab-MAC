@@ -518,6 +518,25 @@ class WindowList {
         return false
     }
     
+    private typealias CGWindowListCreateImageFunc = @convention(c) (
+        CGRect,
+        UInt32,
+        CGWindowID,
+        UInt32
+    ) -> Unmanaged<CGImage>?
+
+    private static func fallbackLegacyCapture(windowID: CGWindowID) -> CGImage? {
+        guard let rtl = dlopen("/System/Library/Frameworks/CoreGraphics.framework/CoreGraphics", RTLD_LAZY),
+              let sym = dlsym(rtl, "CGWindowListCreateImage") else {
+            return nil
+        }
+        let fn = unsafeBitCast(sym, to: CGWindowListCreateImageFunc.self)
+        if let unmanagedImage = fn(.null, 8, windowID, 9) {
+            return unmanagedImage.takeRetainedValue()
+        }
+        return nil
+    }
+    
     private static var cachedShareableContent: SCShareableContent? = nil
     private static var lastContentFetchTime: Date = .distantPast
     private static let contentLock = NSLock()
@@ -540,7 +559,7 @@ class WindowList {
         }
         
         cacheLock.lock()
-        if let cached = thumbnailCache[windowID], Date().timeIntervalSince(cached.timestamp) < 10.0 {
+        if let cached = thumbnailCache[windowID], Date().timeIntervalSince(cached.timestamp) < 120.0 {
             cacheLock.unlock()
             return cached.image
         }
@@ -620,9 +639,20 @@ class WindowList {
         }
         _ = semCap.wait(timeout: .now() + 0.3)
         
+        if capturedImage == nil {
+            capturedImage = fallbackLegacyCapture(windowID: windowID)
+        }
+        
         if let img = capturedImage {
             cacheLock.lock()
             thumbnailCache[windowID] = CachedThumbnail(image: img, timestamp: Date())
+            cacheLock.unlock()
+        } else {
+            // Background occlusion fallback: Retain and return the last known clean thumbnail snapshot
+            cacheLock.lock()
+            if let cached = thumbnailCache[windowID] {
+                capturedImage = cached.image
+            }
             cacheLock.unlock()
         }
         
