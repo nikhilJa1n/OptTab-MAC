@@ -14,9 +14,22 @@ public struct VersionRelease: Identifiable {
 public struct VersionHistory {
     public static let releases: [VersionRelease] = [
         VersionRelease(
-            version: "3.1",
+            version: "3.2",
             releaseDate: "August 2026",
             isCurrent: true,
+            summary: "Add fallback mechanism for legacy window image capture and extend thumbnail cache duration",
+            features: [
+                "Add fallback mechanism for legacy window image capture and extend thumbnail cache duration",
+                "Optimize window retrieval by implementing concurrent scanning and improved role validation"
+            ],
+            fixes: [
+                
+            ]
+        ),
+                VersionRelease(
+            version: "3.1",
+            releaseDate: "August 2026",
+            isCurrent: false,
             summary: "Improve app activation logic; enhance thumbnail loading behavior",
             features: [
                 "Improve app activation logic; enhance thumbnail loading behavior",

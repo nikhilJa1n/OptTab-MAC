@@ -1,6 +1,6 @@
-## What's New in v3.1
+## What's New in v3.2
 
 ### 🌟 Features & Improvements
-- Improve app activation logic; enhance thumbnail loading behavior
-- Enhance thumbnail loading and display in DockPreviewView and SwitcherView with improved caching and UI adjustments
+- Add fallback mechanism for legacy window image capture and extend thumbnail cache duration
+- Optimize window retrieval by implementing concurrent scanning and improved role validation
 
