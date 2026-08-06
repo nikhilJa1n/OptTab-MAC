@@ -159,65 +159,80 @@ class WindowList {
         var validAXWindowIDs: Set<CGWindowID> = []
         var axWindowTitles: [CGWindowID: String] = [:]
         var axMinimizedStates: [CGWindowID: Bool] = [:]
-        for app in NSWorkspace.shared.runningApplications {
-            if app.activationPolicy == .regular {
-                let appRef = AXUIElementCreateApplication(app.processIdentifier)
+        let axLock = NSLock()
+        
+        let regularApps = NSWorkspace.shared.runningApplications.filter { $0.activationPolicy == .regular }
+        
+        // Concurrent parallel scanning across CPU cores with 50ms IPC timeout per app (prevents lag from busy/unresponsive apps)
+        DispatchQueue.concurrentPerform(iterations: regularApps.count) { index in
+            let app = regularApps[index]
+            let appRef = AXUIElementCreateApplication(app.processIdentifier)
+            AXUIElementSetMessagingTimeout(appRef, 0.05)
+            
+            var axElements: [AXUIElement] = []
+            var windowsValue: AnyObject?
+            if AXUIElementCopyAttributeValue(appRef, kAXWindowsAttribute as CFString, &windowsValue) == .success,
+               let axWindows = windowsValue as? [AXUIElement] {
+                axElements.append(contentsOf: axWindows)
+            }
+            
+            var localIDs: Set<CGWindowID> = []
+            var localTitles: [CGWindowID: String] = [:]
+            var localMinStates: [CGWindowID: Bool] = [:]
+            
+            for axWindow in axElements {
+                AXUIElementSetMessagingTimeout(axWindow, 0.05)
                 
-                var axElements: [AXUIElement] = []
-                var windowsValue: AnyObject?
-                if AXUIElementCopyAttributeValue(appRef, kAXWindowsAttribute as CFString, &windowsValue) == .success,
-                   let axWindows = windowsValue as? [AXUIElement] {
-                    axElements.append(contentsOf: axWindows)
+                // Check role: must be AXWindow
+                var roleValue: AnyObject?
+                if AXUIElementCopyAttributeValue(axWindow, kAXRoleAttribute as CFString, &roleValue) == .success,
+                   let role = roleValue as? String, role != kAXWindowRole {
+                    continue
                 }
                 
-                for axWindow in axElements {
-                    // Check role: must be AXWindow
-                    var roleValue: AnyObject?
-                    if AXUIElementCopyAttributeValue(axWindow, kAXRoleAttribute as CFString, &roleValue) == .success,
-                       let role = roleValue as? String, role != kAXWindowRole {
+                // Check subrole: must be Standard, Dialog, SystemDialog, FloatingWindow, or empty
+                var subroleValue: AnyObject?
+                if AXUIElementCopyAttributeValue(axWindow, kAXSubroleAttribute as CFString, &subroleValue) == .success,
+                   let subrole = subroleValue as? String {
+                    let allowed = (subrole == kAXStandardWindowSubrole || 
+                                   subrole == kAXDialogSubrole || 
+                                   subrole == "AXSystemDialog" ||
+                                   subrole == "AXFloatingWindow" ||
+                                   subrole.isEmpty)
+                    if !allowed {
                         continue
                     }
+                }
+                
+                if let id = getWindowID(from: axWindow) {
+                    localIDs.insert(id)
                     
-                    // Check subrole: must be Standard, Dialog, SystemDialog, FloatingWindow, or empty
-                    var subroleValue: AnyObject?
-                    if AXUIElementCopyAttributeValue(axWindow, kAXSubroleAttribute as CFString, &subroleValue) == .success,
-                       let subrole = subroleValue as? String {
-                        let allowed = (subrole == kAXStandardWindowSubrole || 
-                                       subrole == kAXDialogSubrole || 
-                                       subrole == "AXSystemDialog" ||
-                                       subrole == "AXFloatingWindow" ||
-                                       subrole.isEmpty)
-                        if !allowed {
-                            continue
+                    // Retrieve title from AX
+                    var titleValue: AnyObject?
+                    if AXUIElementCopyAttributeValue(axWindow, kAXTitleAttribute as CFString, &titleValue) == .success,
+                       let titleStr = titleValue as? String {
+                        let trimmed = titleStr.trimmingCharacters(in: .whitespacesAndNewlines)
+                        if !trimmed.isEmpty {
+                            localTitles[id] = trimmed
                         }
                     }
                     
-                    // Let all AXWindows pass role validation without requiring standard close/minimize controls (fixes custom/Chromium decorations)
-                    
-                    if let id = getWindowID(from: axWindow) {
-                        validAXWindowIDs.insert(id)
-                        
-                        // Retrieve title from AX
-                        var titleValue: AnyObject?
-                        if AXUIElementCopyAttributeValue(axWindow, kAXTitleAttribute as CFString, &titleValue) == .success,
-                           let titleStr = titleValue as? String {
-                            let trimmed = titleStr.trimmingCharacters(in: .whitespacesAndNewlines)
-                            if !trimmed.isEmpty {
-                                axWindowTitles[id] = trimmed
-                            }
-                        }
-                        
-                        // Retrieve minimized state
-                        var minimizedValue: AnyObject?
-                        if AXUIElementCopyAttributeValue(axWindow, kAXMinimizedAttribute as CFString, &minimizedValue) == .success,
-                           let minBool = minimizedValue as? Bool {
-                            axMinimizedStates[id] = minBool
-                        } else {
-                            axMinimizedStates[id] = false
-                        }
+                    // Retrieve minimized state
+                    var minimizedValue: AnyObject?
+                    if AXUIElementCopyAttributeValue(axWindow, kAXMinimizedAttribute as CFString, &minimizedValue) == .success,
+                       let minBool = minimizedValue as? Bool {
+                        localMinStates[id] = minBool
+                    } else {
+                        localMinStates[id] = false
                     }
                 }
             }
+            
+            axLock.lock()
+            validAXWindowIDs.formUnion(localIDs)
+            axWindowTitles.merge(localTitles) { current, _ in current }
+            axMinimizedStates.merge(localMinStates) { current, _ in current }
+            axLock.unlock()
         }
         
         // Pre-scan to identify applications (PIDs) that have at least one window with a non-empty title.
