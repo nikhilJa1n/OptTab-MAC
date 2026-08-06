@@ -1,16 +1,33 @@
 # macOS System Files
 .DS_Store
+.AppleDouble
+.LSOverride
+._*
+.Spotlight-V100
+.Trashes
 
-# Swift Package Manager build products
+# Swift Package Manager & Xcode
 .build/
 .swiftpm/
+DerivedData/
+.xcuserdata/
+*.xcuserdata
+*.xcodeproj/
+*.xcworkspace/
 
-# Compiled App Bundle
+# IDE Configuration
+.vscode/
+.idea/
+
+# Compiled Bundles & Artifacts
 *.app/
-
-# Compiled Installer
 *.dmg
 *.zip
+dmg_staging/
+
+# Local Logs & Scratch Files
+*.log
+scratch/
 
 # Agent configuration
 .agents/
