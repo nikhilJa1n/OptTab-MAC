@@ -11,3 +11,6 @@
 # Compiled Installer
 *.dmg
 *.zip
+
+# Agent configuration
+.agents/
