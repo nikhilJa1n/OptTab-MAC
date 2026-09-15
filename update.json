@@ -1,5 +1,5 @@
 {
-  "version": "3.2",
-  "downloadUrl": "https://github.com/nikhilJa1n/OptTab-MAC/releases/download/v3.2/OptTab.dmg",
-  "changelog": "\u2022 Add fallback mechanism for legacy window image capture and extend thumbnail cache duration\n\u2022 Optimize window retrieval by implementing concurrent scanning and improved role validation"
+  "version": "3.3",
+  "downloadUrl": "https://github.com/nikhilJa1n/OptTab-MAC/releases/download/v3.3/OptTab.dmg",
+  "changelog": "\u2022 Enhance versioning and update handling across the application\n\u2022 Remove deprecated window handling and release scripts"
 }

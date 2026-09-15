@@ -1,6 +1,6 @@
-## What's New in v3.2
+## What's New in v3.3
 
 ### 🌟 Features & Improvements
-- Add fallback mechanism for legacy window image capture and extend thumbnail cache duration
-- Optimize window retrieval by implementing concurrent scanning and improved role validation
+- Enhance versioning and update handling across the application
+- Remove deprecated window handling and release scripts
 

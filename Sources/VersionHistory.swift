@@ -17,17 +17,16 @@ public struct VersionHistory {
             version: "3.3",
             releaseDate: "September 2026",
             isCurrent: true,
-            summary: "Full macOS 27 compatibility with modern ScreenCaptureKit and AppKit Glass APIs",
+            summary: "Enhance versioning and update handling across the application",
             features: [
-                "Modernized ScreenCaptureKit with SCScreenshotConfiguration, ignoreClipping, and automatic shadow stripping on macOS 26/27",
-                "Integrated native AppKit NSGlassEffectView for specular glassmorphism on macOS 26/27",
-                "Maintained backward compatibility with macOS 14 Sonoma and macOS 15 Sequoia"
+                "Enhance versioning and update handling across the application",
+                "Remove deprecated window handling and release scripts"
             ],
             fixes: [
-                "Eliminated clipping issues for off-screen and partially obscured windows using modern ScreenCaptureKit capabilities"
+                
             ]
         ),
-        VersionRelease(
+                        VersionRelease(
             version: "3.2",
             releaseDate: "August 2026",
             isCurrent: false,
