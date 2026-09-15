@@ -357,6 +357,9 @@ struct OnboardingView: View {
                     
                     Spacer()
                     
+                    let currentVersion = Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? VersionHistory.releases.first?.version ?? "3.3"
+                    let currentBuild = Bundle.main.infoDictionary?["CFBundleVersion"] as? String ?? "59"
+                    
                     Button(action: {
                         UpdateChecker.shared.checkForUpdates(verbose: true)
                     }) {
@@ -370,6 +373,17 @@ struct OnboardingView: View {
                     }
                     .buttonStyle(PlainButtonStyle())
                     .padding(.bottom, 2)
+                    
+                    Button(action: {
+                        state.isShowingVersionHistory = true
+                    }) {
+                        Text("v\(currentVersion) (Build \(currentBuild))")
+                            .font(.system(size: 9.5, weight: .medium, design: .monospaced))
+                            .foregroundColor(.white.opacity(0.4))
+                    }
+                    .buttonStyle(PlainButtonStyle())
+                    .help("Click to view Version History & Release Notes")
+                    .padding(.bottom, 6)
                     
                     HStack(spacing: 6) {
                         Circle()
@@ -1018,6 +1032,19 @@ struct DiagnosticsTab: View {
                 
                 SettingsSection("Version & Release Notes") {
                     VStack(alignment: .leading, spacing: 8) {
+                        let currentVer = Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? VersionHistory.releases.first?.version ?? "3.3"
+                        let currentBld = Bundle.main.infoDictionary?["CFBundleVersion"] as? String ?? "59"
+                        
+                        HStack(spacing: 6) {
+                            Text("Installed Version:")
+                                .font(.system(size: 10.5, weight: .bold))
+                                .foregroundColor(.white.opacity(0.6))
+                            Text("v\(currentVer) (Build \(currentBld))")
+                                .font(.system(size: 10.5, weight: .bold, design: .monospaced))
+                                .foregroundColor(.green)
+                        }
+                        .padding(.vertical, 2)
+                        
                         Text("Inspect current version details, release notes, and full changelog history.")
                             .font(.system(size: 9.5))
                             .foregroundColor(.white.opacity(0.45))

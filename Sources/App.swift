@@ -390,12 +390,25 @@ class AppDelegate: NSObject, NSApplicationDelegate, HotkeyManagerDelegate {
             }
             
             let menu = NSMenu()
+            let currentVersion = Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? VersionHistory.releases.first?.version ?? "3.3"
+            let currentBuild = Bundle.main.infoDictionary?["CFBundleVersion"] as? String ?? "59"
+            
+            let versionItem = NSMenuItem(title: "OptTab v\(currentVersion) (\(currentBuild))", action: #selector(showOnboarding), keyEquivalent: "")
+            versionItem.isEnabled = false
+            menu.addItem(versionItem)
+            menu.addItem(NSMenuItem.separator())
+            
             menu.addItem(NSMenuItem(title: "Control Panel...", action: #selector(showOnboarding), keyEquivalent: "o"))
+            menu.addItem(NSMenuItem(title: "Check for Updates...", action: #selector(checkForUpdatesMenu), keyEquivalent: "u"))
             menu.addItem(NSMenuItem.separator())
             menu.addItem(NSMenuItem(title: "Quit Advanced Switcher", action: #selector(quitApp), keyEquivalent: "q"))
             
             statusBarItem?.menu = menu
         }
+    }
+    
+    @objc func checkForUpdatesMenu() {
+        UpdateChecker.shared.checkForUpdates(verbose: true)
     }
     
     @objc func showOnboarding() {

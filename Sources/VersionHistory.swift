@@ -14,9 +14,23 @@ public struct VersionRelease: Identifiable {
 public struct VersionHistory {
     public static let releases: [VersionRelease] = [
         VersionRelease(
+            version: "3.3",
+            releaseDate: "September 2026",
+            isCurrent: true,
+            summary: "Full macOS 27 compatibility with modern ScreenCaptureKit and AppKit Glass APIs",
+            features: [
+                "Modernized ScreenCaptureKit with SCScreenshotConfiguration, ignoreClipping, and automatic shadow stripping on macOS 26/27",
+                "Integrated native AppKit NSGlassEffectView for specular glassmorphism on macOS 26/27",
+                "Maintained backward compatibility with macOS 14 Sonoma and macOS 15 Sequoia"
+            ],
+            fixes: [
+                "Eliminated clipping issues for off-screen and partially obscured windows using modern ScreenCaptureKit capabilities"
+            ]
+        ),
+        VersionRelease(
             version: "3.2",
             releaseDate: "August 2026",
-            isCurrent: true,
+            isCurrent: false,
             summary: "Add fallback mechanism for legacy window image capture and extend thumbnail cache duration",
             features: [
                 "Add fallback mechanism for legacy window image capture and extend thumbnail cache duration",

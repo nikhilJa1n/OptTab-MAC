@@ -626,16 +626,33 @@ class WindowList {
         var capturedImage: CGImage? = nil
         let semCap = DispatchSemaphore(value: 0)
         let filter = SCContentFilter(desktopIndependentWindow: scWindow)
-        let config = SCStreamConfiguration()
-        config.showsCursor = false
         let w = Int(scWindow.frame.width * 0.4)
         let h = Int(scWindow.frame.height * 0.4)
-        config.width = w > 0 ? w : 340
-        config.height = h > 0 ? h : 212
+        let targetWidth = w > 0 ? w : 340
+        let targetHeight = h > 0 ? h : 212
         
-        SCScreenshotManager.captureImage(contentFilter: filter, configuration: config) { image, err in
-            capturedImage = image
-            semCap.signal()
+        if #available(macOS 26.0, *) {
+            let config = SCScreenshotConfiguration()
+            config.showsCursor = false
+            config.ignoreClipping = true
+            config.ignoreShadows = true
+            config.width = targetWidth
+            config.height = targetHeight
+            
+            SCScreenshotManager.captureScreenshot(contentFilter: filter, configuration: config) { output, err in
+                capturedImage = output?.sdrImage
+                semCap.signal()
+            }
+        } else {
+            let config = SCStreamConfiguration()
+            config.showsCursor = false
+            config.width = targetWidth
+            config.height = targetHeight
+            
+            SCScreenshotManager.captureImage(contentFilter: filter, configuration: config) { image, err in
+                capturedImage = image
+                semCap.signal()
+            }
         }
         _ = semCap.wait(timeout: .now() + 0.3)
         

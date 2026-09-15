@@ -7,7 +7,7 @@
   <a href="https://github.com/nikhilJa1n/OptTab-MAC/releases"><img src="https://img.shields.io/github/v/release/nikhilJa1n/OptTab-MAC?style=flat-square" alt="Latest Release" /></a>
 </p>
 
-**OptTab** is a next-generation window manager and interactive switcher HUD designed to replace the default macOS app switcher and dock experiences. Built natively in Swift and SwiftUI for macOS 14+ and macOS 15 Sequoia, it introduces a glassmorphic interface, dynamic multi-row grid layouts, multi-window tab grouping, and hardware-accelerated isolated window previews—all running as a zero-latency, lightweight background agent.
+**OptTab** is a next-generation window manager and interactive switcher HUD designed to replace the default macOS app switcher and dock experiences. Built natively in Swift and SwiftUI for macOS 14+, macOS 15 Sequoia, and macOS 27, it introduces a glassmorphic interface, dynamic multi-row grid layouts, multi-window tab grouping, and hardware-accelerated isolated window previews—all running as a zero-latency, lightweight background agent.
 
 ---
 
@@ -15,7 +15,7 @@
 
 *   **Smart MRU Sorting**: Replaces unstable OS Z-ordering. The `"Recently Used"` list sorts strictly by your active window history (`mruWindowIDs`), ensuring the most recently active window is always selected first.
 *   **Multi-Window & Tab Grouping**: Preserves separate real OS windows for multi-window apps (Terminal, Chrome, Finder, VS Code) as individual cards while automatically merging duplicate internal tabs.
-*   **Dual Capture Pipeline**: Combines single-batch `SCShareableContent` pre-fetching with WindowServer compositor fallback (`fallbackLegacyCapture`) so background/occluded windows (e.g. Chrome) **always** render clean thumbnail snapshots.
+*   **Dual Capture Pipeline**: Combines single-batch `SCShareableContent` pre-fetching and modern `SCScreenshotConfiguration` (`ignoreClipping` & `ignoreShadows`) with WindowServer compositor fallback (`fallbackLegacyCapture`) so background/occluded windows (e.g. Chrome) **always** render clean thumbnail snapshots.
 *   **Parallel Multi-Core Engine**: Scans accessibility trees in parallel across CPU cores with a **50ms hard IPC messaging timeout** (`AXUIElementSetMessagingTimeout`), preventing slow or unresponsive apps from stalling `Option + Tab`.
 *   **Dynamic 2D Grid & 100% Uncropped Previews**: Toggle between horizontal rows and 2D multi-row grids with customizable column counts, thumbnail scaling (up to 140%+), and uncropped (`.fit`) full-window previews.
 *   **Aero Action Panel & Resource Widgets**: Instantly Close, Minimize, Maximize, or Force Quit applications (`W` / `M` / `F` / `Q`) alongside real-time CPU and RAM resource monitors.
@@ -38,7 +38,7 @@
 
 ## ⚙️ Requirements & Security Model
 
-*   **Operating System**: macOS 14.0 (Sonoma) or macOS 15.0 (Sequoia) or newer.
+*   **Operating System**: macOS 14.0 (Sonoma), macOS 15.0 (Sequoia), macOS 26 / 27 or newer.
 *   **Security & Privacy Policy**:
     *   OptTab operates **entirely locally**. No screen data, window titles, keystrokes, or process lists are ever transmitted, saved, or sent over a network.
     *   **Accessibility API**: Required to retrieve window titles and control windows (minimize, maximize, close, and snap).
