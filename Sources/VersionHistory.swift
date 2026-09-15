@@ -17,8 +17,9 @@ public struct VersionHistory {
             version: "3.3",
             releaseDate: "September 2026",
             isCurrent: true,
-            summary: "Enhance versioning and update handling across the application",
+            summary: "Update release notes and version information for v3.3",
             features: [
+                "Update release notes and version information for v3.3",
                 "Enhance versioning and update handling across the application",
                 "Remove deprecated window handling and release scripts"
             ],
@@ -26,7 +27,7 @@ public struct VersionHistory {
                 
             ]
         ),
-                        VersionRelease(
+                                                                VersionRelease(
             version: "3.2",
             releaseDate: "August 2026",
             isCurrent: false,
