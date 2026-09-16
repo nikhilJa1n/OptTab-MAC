@@ -270,9 +270,9 @@ class WindowList {
             guard let pid = info[kCGWindowOwnerPID as String] as? pid_t else { continue }
             if pid == currentPid { continue }
             
-            var title = (info[kCGWindowName as String] as? String ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
-            if title.isEmpty, let axTitle = axWindowTitles[windowID] {
-                title = axTitle
+            var title = axWindowTitles[windowID] ?? ""
+            if title.isEmpty {
+                title = (info[kCGWindowName as String] as? String ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
             }
             if !title.isEmpty {
                 pidsWithNonEmptyTitle.insert(pid)
@@ -340,9 +340,9 @@ class WindowList {
             }
             
             // FILTER: Must have a non-empty, non-whitespace title (excludes empty helper/background layers)
-            var title = (info[kCGWindowName as String] as? String ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
-            if title.isEmpty, let axTitle = axWindowTitles[windowID] {
-                title = axTitle
+            var title = axWindowTitles[windowID] ?? ""
+            if title.isEmpty {
+                title = (info[kCGWindowName as String] as? String ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
             }
             
             // If the window has an empty title, but the app already has at least one window with a non-empty title,
@@ -432,31 +432,33 @@ class WindowList {
             let tolerance: CGFloat = 20.0
             var seenBoundsListForPID = [pid_t: [CGRect]]()
             
-            for window in windows {
-                if window.isAXValid {
-                    // Real top-level OS window: always keep as a separate card,
-                    // and record its bounds to deduplicate non-AX tab entries belonging to this window.
+            // 1. Process all genuine AX-valid windows first so active tabs claim their bounds
+            for window in windows where window.isAXValid {
+                seenBoundsListForPID[window.pid, default: []].append(window.bounds)
+                uniqueWindows.append(window)
+            }
+            
+            // 2. Filter non-AX entries (duplicates/background tabs)
+            for window in windows where !window.isAXValid {
+                let matchesExisting = seenBoundsListForPID[window.pid, default: []].contains { existingRect in
+                    let dX = abs(existingRect.origin.x - window.bounds.origin.x)
+                    let dY = abs(existingRect.origin.y - window.bounds.origin.y)
+                    let dW = abs(existingRect.width - window.bounds.width)
+                    let dH = abs(existingRect.height - window.bounds.height)
+                    return dX <= tolerance && dY <= tolerance && dW <= tolerance && dH <= tolerance
+                }
+                
+                if !matchesExisting {
                     seenBoundsListForPID[window.pid, default: []].append(window.bounds)
                     uniqueWindows.append(window)
                 } else {
-                    // Non-AX window (tab duplicate, helper layer, or background overlay):
-                    // Only keep if its bounds do NOT match any already-kept window of the same PID (within 20px tolerance).
-                    let matchesExisting = seenBoundsListForPID[window.pid, default: []].contains { existingRect in
-                        let dX = abs(existingRect.origin.x - window.bounds.origin.x)
-                        let dY = abs(existingRect.origin.y - window.bounds.origin.y)
-                        let dW = abs(existingRect.width - window.bounds.width)
-                        let dH = abs(existingRect.height - window.bounds.height)
-                        return dX <= tolerance && dY <= tolerance && dW <= tolerance && dH <= tolerance
-                    }
-                    
-                    if !matchesExisting {
-                        seenBoundsListForPID[window.pid, default: []].append(window.bounds)
-                        uniqueWindows.append(window)
-                    } else {
-                        logMessage("[TabDedup] Filtered non-AX tab duplicate: '\(window.title)' (\(window.ownerName)) pid=\(window.pid) bounds=\(window.bounds)")
-                    }
+                    logMessage("[TabDedup] Filtered non-AX tab duplicate: '\(window.title)' (\(window.ownerName)) pid=\(window.pid) bounds=\(window.bounds)")
                 }
             }
+            
+            // 3. Restore the original Z-order sequence from windows
+            let orderMap = Dictionary(uniqueKeysWithValues: windows.enumerated().map { ($0.element.id, $0.offset) })
+            uniqueWindows.sort { (orderMap[$0.id] ?? 0) < (orderMap[$1.id] ?? 0) }
         } else {
             // Original logic: Keep all AX-valid windows. For non-AX-valid windows (tabs/helpers),
             // only keep them if they don't overlap with already kept windows of the same app on the same space.
@@ -803,13 +805,22 @@ class WindowList {
                     }
                 }
                 
-                // Fallback 2: Tab matching (find tab elements inside window and switch tabs)
-                for axWindow in axWindows {
-                    if selectTabIfNeeded(element: axWindow, targetTitle: window.title) {
-                        logMessage("      Match found by tab fallback! Raising.")
-                        performAXRaise(axWindow: axWindow)
-                        return true
+                // Fallback 2: Tab matching
+                let groupTabbedWindows = UserDefaults.standard.object(forKey: "groupTabbedWindows") as? Bool ?? true
+                if !groupTabbedWindows {
+                    // Only force-switch tabs if the user disabled tab grouping (individual tab cards enabled)
+                    for axWindow in axWindows {
+                        if selectTabIfNeeded(element: axWindow, targetTitle: window.title) {
+                            logMessage("      Match found by tab fallback! Raising.")
+                            performAXRaise(axWindow: axWindow)
+                            return true
+                        }
                     }
+                } else if let firstWin = axWindows.first {
+                    // Tab grouping is enabled: Simply raise the frontmost window preserving the user's active tab
+                    logMessage("      groupTabbedWindows=true: raising frontmost window without changing tab.")
+                    performAXRaise(axWindow: firstWin)
+                    return true
                 }
                 logMessage("      tryRaise: No match found by AX ID/Title.")
                 return false

@@ -270,6 +270,25 @@ class AppDelegate: NSObject, NSApplicationDelegate, HotkeyManagerDelegate {
         rawWindows = rawWindows.filter { !appState.excludedApps.contains($0.ownerName) }
         guard !rawWindows.isEmpty else { return ([], 0) }
         
+        // Tabbed window reconciliation:
+        // When tab grouping is enabled, if an app's active window ID shifted between tabs
+        // (e.g. Terminal tabs sharing the same frame), update mruWindowIDs and
+        // previousActiveWindowIDBeforeSwitch so the MRU tracking aligns with the currently active tab.
+        if appState.groupTabbedWindows {
+            for window in rawWindows where window.isAXValid {
+                if !mruWindowIDs.contains(window.id) {
+                    if let staleID = mruWindowIDs.first(where: { trackedID in
+                        !rawWindows.contains(where: { $0.id == trackedID })
+                    }), let idx = mruWindowIDs.firstIndex(of: staleID) {
+                        mruWindowIDs[idx] = window.id
+                        if previousActiveWindowIDBeforeSwitch == staleID {
+                            previousActiveWindowIDBeforeSwitch = window.id
+                        }
+                    }
+                }
+            }
+        }
+        
         // Log raw Z-order from CGWindowList
         logMessage("[getSortedWindowsAndIndex] Raw Z-order (top \(min(5, rawWindows.count))):")
         for i in 0..<min(5, rawWindows.count) {
