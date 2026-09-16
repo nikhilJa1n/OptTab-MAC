@@ -14,6 +14,25 @@ public struct VersionRelease: Identifiable {
 public struct VersionHistory {
     public static let releases: [VersionRelease] = [
         VersionRelease(
+            version: "3.5-alpha.2",
+            releaseDate: "September 2026",
+            isCurrent: false,
+            summary: "> [!NOTE]",
+            features: [
+                "> [!NOTE]",
+                "> This is an experimental alpha pre-release intended for preview testing. Features and behaviors may change.",
+                "Automated alpha release bump to v3.5-alpha.1",
+                "Refactor hotkey option release logic and improve logging in HotkeyManager; enhance window list handling for shareable content retrieval",
+                "Enhance update management by adding alpha release support, including new scripts and JSON configuration for alpha updates",
+                "Enhance window management by improving messaging timeouts and adding window PID mapping",
+                "Enhance window management by improving tabbed window reconciliation and deduplication logic",
+                "Enhance tag push logic to handle existing tags gracefully"
+            ],
+            fixes: [
+                
+            ]
+        ),
+                VersionRelease(
             version: "3.5-alpha.1",
             releaseDate: "September 2026",
             isCurrent: false,
