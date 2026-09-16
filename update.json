@@ -1,5 +1,5 @@
 {
   "version": "3.4",
   "downloadUrl": "https://github.com/nikhilJa1n/OptTab-MAC/releases/download/v3.4/OptTab.dmg",
-  "changelog": "\u2022 Set AX messaging timeout to improve responsiveness in window management\n\u2022 Add release script for packaging and versioning automation"
+  "changelog": "\u2022 Set AX messaging timeout to improve responsiveness in window management"
 }

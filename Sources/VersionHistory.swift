@@ -19,14 +19,13 @@ public struct VersionHistory {
             isCurrent: true,
             summary: "Set AX messaging timeout to improve responsiveness in window management",
             features: [
-                "Set AX messaging timeout to improve responsiveness in window management",
-                "Add release script for packaging and versioning automation"
+                "Set AX messaging timeout to improve responsiveness in window management"
             ],
             fixes: [
                 
             ]
         ),
-                VersionRelease(
+                                VersionRelease(
             version: "3.3",
             releaseDate: "September 2026",
             isCurrent: false,
