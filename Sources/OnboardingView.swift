@@ -96,6 +96,10 @@ class AppState: ObservableObject {
         didSet { UserDefaults.standard.set(gridMaxRows, forKey: "gridMaxRows") }
     }
     
+    @Published var includeAlphaUpdates: Bool {
+        didSet { UserDefaults.standard.set(includeAlphaUpdates, forKey: "includeAlphaUpdates") }
+    }
+    
     private var timer: AnyCancellable?
     
     init() {
@@ -129,6 +133,7 @@ class AppState: ObservableObject {
         self.groupTabbedWindows = UserDefaults.standard.object(forKey: "groupTabbedWindows") as? Bool ?? true
         self.hideMenuIcon = UserDefaults.standard.object(forKey: "hideMenuIcon") as? Bool ?? false
         self.startAtLogin = (SMAppService.mainApp.status == .enabled)
+        self.includeAlphaUpdates = UserDefaults.standard.object(forKey: "includeAlphaUpdates") as? Bool ?? false
         
         checkPermissions()
         startPermissionPolling()
@@ -149,6 +154,7 @@ class AppState: ObservableObject {
         self.useGridLayout = false
         self.gridColumns = 0
         self.gridMaxRows = 0
+        self.includeAlphaUpdates = false
         
         UserDefaults.standard.removeObject(forKey: "enableArrowNavigation")
         UserDefaults.standard.removeObject(forKey: "thumbnailScale")
@@ -165,6 +171,7 @@ class AppState: ObservableObject {
         UserDefaults.standard.removeObject(forKey: "gridMaxRows")
         UserDefaults.standard.removeObject(forKey: "dockHoverDelay")
         UserDefaults.standard.removeObject(forKey: "useGridLayout")
+        UserDefaults.standard.removeObject(forKey: "includeAlphaUpdates")
         
         self.startAtLogin = false
         self.hideMenuIcon = false
@@ -363,13 +370,15 @@ struct OnboardingView: View {
                     Button(action: {
                         UpdateChecker.shared.checkForUpdates(verbose: true)
                     }) {
-                        Text("Check for Updates")
-                            .font(.system(size: 10, weight: .bold, design: .rounded))
-                            .foregroundColor(.white.opacity(0.55))
-                            .padding(.vertical, 5)
-                            .padding(.horizontal, 10)
-                            .background(Color.white.opacity(0.03))
-                            .cornerRadius(5)
+                        HStack(spacing: 4) {
+                            Text(state.includeAlphaUpdates ? "Check for Updates (Alpha)" : "Check for Updates")
+                                .font(.system(size: 10, weight: .bold, design: .rounded))
+                                .foregroundColor(state.includeAlphaUpdates ? Color.purple.opacity(0.85) : Color.white.opacity(0.55))
+                        }
+                        .padding(.vertical, 5)
+                        .padding(.horizontal, 10)
+                        .background(state.includeAlphaUpdates ? Color.purple.opacity(0.12) : Color.white.opacity(0.03))
+                        .cornerRadius(5)
                     }
                     .buttonStyle(PlainButtonStyle())
                     .padding(.bottom, 2)
@@ -616,6 +625,14 @@ struct GeneralTab: View {
                                 .padding(.top, 2)
                         }
                     }
+                }
+                
+                SettingsSection("Updates & Early Access") {
+                    ToggleRow(
+                        title: "Include Alpha / Beta Updates",
+                        description: "Get early access to preview builds with newest features and fixes. Alpha builds may be less stable.",
+                        isOn: $state.includeAlphaUpdates
+                    )
                 }
                 
                 SettingsSection("Switcher Scale") {

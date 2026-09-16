@@ -25,9 +25,22 @@ DerivedData/
 *.zip
 dmg_staging/
 
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+.pytest_cache/
+
 # Local Logs & Scratch Files
 *.log
 scratch/
 
+# Editor & Temporary Files
+*.swp
+*.swo
+*~
+.history/
+
 # Agent configuration
 .agents/
+

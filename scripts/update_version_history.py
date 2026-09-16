@@ -57,15 +57,19 @@ def get_git_commit_logs(version):
 
 def main():
     if len(sys.argv) < 2:
-        print("Usage: python3 update_version_history.py <version> [notes]")
+        print("Usage: python3 update_version_history.py <version> [notes] [--alpha]")
         sys.exit(1)
         
     version = sys.argv[1]
     
-    # Auto-pick release notes from git commit log if not explicitly provided
-    if len(sys.argv) > 2 and sys.argv[2].strip():
-        raw_notes = sys.argv[2].strip()
-        print(f"[Automation] Syncing provided release notes into VersionHistory.swift & update.json.")
+    is_alpha = "--alpha" in sys.argv or any(k in version.lower() for k in ["alpha", "beta", "rc", "preview"])
+    
+    # Filter out flags from notes argument
+    raw_notes = ""
+    notes_args = [arg for arg in sys.argv[2:] if not arg.startswith("--")]
+    if notes_args and notes_args[0].strip():
+        raw_notes = notes_args[0].strip()
+        print(f"[Automation] Syncing provided release notes into VersionHistory.swift & update config.")
     else:
         print(f"[Automation] Auto-picking release notes from git commit log...")
         raw_notes = get_git_commit_logs(version)
@@ -106,8 +110,13 @@ def main():
         version_pattern = rf'VersionRelease\(\s*version:\s*"{re.escape(version)}".*?\),?\n'
         content = re.sub(version_pattern, '', content, flags=re.DOTALL)
         
-        # Mark all remaining existing releases as isCurrent: false
-        content = content.replace("isCurrent: true", "isCurrent: false")
+        # For non-alpha stable releases, mark all existing releases as isCurrent: false
+        if not is_alpha:
+            content = content.replace("isCurrent: true", "isCurrent: false")
+            is_current_flag = "true"
+        else:
+            # Alpha builds are listed at the top but don't steal isCurrent from stable
+            is_current_flag = "false"
         
         features_swift = ",\n                ".join(f'"{f}"' for f in features) if features else ""
         fixes_swift = ",\n                ".join(f'"{f}"' for f in fixes) if fixes else ""
@@ -115,7 +124,7 @@ def main():
         new_entry = f'''        VersionRelease(
             version: "{version}",
             releaseDate: "{date_str}",
-            isCurrent: true,
+            isCurrent: {is_current_flag},
             summary: "{summary}",
             features: [
                 {features_swift}
@@ -132,21 +141,41 @@ def main():
                 f.write(content)
             print(f"[Automation] Updated {history_swift_path} for version {version}")
 
-    # 2. Update update.json
-    update_json_path = "update.json"
+    # 2. Update update.json / update-alpha.json
     changelog_str = "\n".join(f"• {l}" for l in clean_lines)
     update_data = {
         "version": version,
         "downloadUrl": f"https://github.com/nikhilJa1n/OptTab-MAC/releases/download/v{version}/OptTab.dmg",
         "changelog": changelog_str
     }
-    with open(update_json_path, "w", encoding="utf-8") as f:
-        json.dump(update_data, f, indent=2)
-    print(f"[Automation] Updated {update_json_path} for version {version}")
+    if is_alpha:
+        update_data["isPrerelease"] = True
+        alpha_json_path = "update-alpha.json"
+        with open(alpha_json_path, "w", encoding="utf-8") as f:
+            json.dump(update_data, f, indent=2)
+        print(f"[Automation] Updated {alpha_json_path} for alpha version {version}")
+    else:
+        # Stable release updates update.json AND syncs into update-alpha.json
+        update_json_path = "update.json"
+        with open(update_json_path, "w", encoding="utf-8") as f:
+            json.dump(update_data, f, indent=2)
+        print(f"[Automation] Updated {update_json_path} for version {version}")
+        
+        # Also ensure alpha feed receives this newer stable build so alpha users upgrade
+        alpha_json_path = "update-alpha.json"
+        if os.path.exists(alpha_json_path):
+            with open(alpha_json_path, "w", encoding="utf-8") as f:
+                json.dump(update_data, f, indent=2)
+            print(f"[Automation] Synced {alpha_json_path} with stable version {version}")
 
     # 3. Update RELEASE_NOTES.md for GitHub Release Notes Body
     release_notes_md_path = "RELEASE_NOTES.md"
-    md_content = f"## What's New in v{version}\n\n"
+    if is_alpha:
+        md_content = f"## 🧪 OptTab v{version} (Alpha Preview)\n\n"
+        md_content += "> [!NOTE]\n> This is an experimental alpha pre-release intended for preview testing. Features and behaviors may change.\n\n"
+    else:
+        md_content = f"## What's New in v{version}\n\n"
+        
     if features:
         md_content += "### 🌟 Features & Improvements\n"
         for item in features:
