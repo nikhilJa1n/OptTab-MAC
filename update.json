@@ -1,5 +1,5 @@
 {
-  "version": "3.3",
-  "downloadUrl": "https://github.com/nikhilJa1n/OptTab-MAC/releases/download/v3.3/OptTab.dmg",
-  "changelog": "\u2022 Update release notes and version information for v3.3\n\u2022 Enhance versioning and update handling across the application\n\u2022 Remove deprecated window handling and release scripts"
+  "version": "3.4",
+  "downloadUrl": "https://github.com/nikhilJa1n/OptTab-MAC/releases/download/v3.4/OptTab.dmg",
+  "changelog": "\u2022 Set AX messaging timeout to improve responsiveness in window management\n\u2022 Add release script for packaging and versioning automation"
 }

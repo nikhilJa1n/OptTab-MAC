@@ -14,9 +14,22 @@ public struct VersionRelease: Identifiable {
 public struct VersionHistory {
     public static let releases: [VersionRelease] = [
         VersionRelease(
-            version: "3.3",
+            version: "3.4",
             releaseDate: "September 2026",
             isCurrent: true,
+            summary: "Set AX messaging timeout to improve responsiveness in window management",
+            features: [
+                "Set AX messaging timeout to improve responsiveness in window management",
+                "Add release script for packaging and versioning automation"
+            ],
+            fixes: [
+                
+            ]
+        ),
+                VersionRelease(
+            version: "3.3",
+            releaseDate: "September 2026",
+            isCurrent: false,
             summary: "Update release notes and version information for v3.3",
             features: [
                 "Update release notes and version information for v3.3",
