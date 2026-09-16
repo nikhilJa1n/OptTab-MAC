@@ -1,5 +1,5 @@
-## What's New in v3.4
+## What's New in v3.5
 
 ### 🌟 Features & Improvements
-- Set AX messaging timeout to improve responsiveness in window management
+- Enhance window management by improving tabbed window reconciliation and deduplication logic
 

@@ -1,5 +1,5 @@
 {
-  "version": "3.4",
-  "downloadUrl": "https://github.com/nikhilJa1n/OptTab-MAC/releases/download/v3.4/OptTab.dmg",
-  "changelog": "\u2022 Set AX messaging timeout to improve responsiveness in window management"
+  "version": "3.5",
+  "downloadUrl": "https://github.com/nikhilJa1n/OptTab-MAC/releases/download/v3.5/OptTab.dmg",
+  "changelog": "\u2022 Enhance window management by improving tabbed window reconciliation and deduplication logic"
 }

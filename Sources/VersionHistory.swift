@@ -14,9 +14,21 @@ public struct VersionRelease: Identifiable {
 public struct VersionHistory {
     public static let releases: [VersionRelease] = [
         VersionRelease(
-            version: "3.4",
+            version: "3.5",
             releaseDate: "September 2026",
             isCurrent: true,
+            summary: "Enhance window management by improving tabbed window reconciliation and deduplication logic",
+            features: [
+                "Enhance window management by improving tabbed window reconciliation and deduplication logic"
+            ],
+            fixes: [
+                
+            ]
+        ),
+                VersionRelease(
+            version: "3.4",
+            releaseDate: "September 2026",
+            isCurrent: false,
             summary: "Set AX messaging timeout to improve responsiveness in window management",
             features: [
                 "Set AX messaging timeout to improve responsiveness in window management"
