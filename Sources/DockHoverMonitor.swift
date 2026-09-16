@@ -66,6 +66,7 @@ class DockHoverMonitor {
         let cursorPoint = CGPoint(x: mouseLoc.x, y: screenHeight - mouseLoc.y)
         
         let dockRef = AXUIElementCreateApplication(dockPID)
+        AXUIElementSetMessagingTimeout(dockRef, 0.05)
         
         var childrenValue: AnyObject?
         guard AXUIElementCopyAttributeValue(dockRef, kAXChildrenAttribute as CFString, &childrenValue) == .success,

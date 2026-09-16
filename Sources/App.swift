@@ -160,6 +160,7 @@ class AppDelegate: NSObject, NSApplicationDelegate, HotkeyManagerDelegate {
             DispatchQueue.main.asyncAfter(deadline: .now() + delay) { [weak self] in
                 // Check if AX windows are available now
                 let appRef = AXUIElementCreateApplication(window.pid)
+                AXUIElementSetMessagingTimeout(appRef, 0.05)
                 var windowsValue: AnyObject?
                 guard AXUIElementCopyAttributeValue(appRef, kAXWindowsAttribute as CFString, &windowsValue) == .success,
                       let axWindows = windowsValue as? [AXUIElement], !axWindows.isEmpty else {

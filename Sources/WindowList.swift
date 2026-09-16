@@ -49,37 +49,61 @@ private func titlesMatch(axTitle: String, windowTitle: String) -> Bool {
     return false
 }
 
-private func selectTabIfNeeded(element: AXUIElement, targetTitle: String) -> Bool {
+private func selectTabIfNeeded(element: AXUIElement, targetTitle: String, depth: Int, visitedCount: inout Int) -> Bool {
+    // Hard limits to prevent UI freezing or deep web DOM tree traversal
+    if depth > 3 || visitedCount > 40 {
+        return false
+    }
+    visitedCount += 1
+    
+    AXUIElementSetMessagingTimeout(element, 0.03)
+    
     var roleVal: AnyObject?
-    if AXUIElementCopyAttributeValue(element, kAXRoleAttribute as CFString, &roleVal) == .success,
-       let role = roleVal as? String {
-        if role == "AXRadioButton" || role == "AXTabButton" || role == "AXButton" || role.contains("Tab") {
-            var titleVal: AnyObject?
-            if AXUIElementCopyAttributeValue(element, kAXTitleAttribute as CFString, &titleVal) == .success,
-               let title = titleVal as? String {
-                let trimmed = title.trimmingCharacters(in: .whitespacesAndNewlines)
-                if !trimmed.isEmpty {
-                    let cleanTrimmed = cleanTabTitle(trimmed)
-                    let cleanTarget = cleanTabTitle(targetTitle)
-                    if cleanTrimmed == cleanTarget || cleanTarget.contains(cleanTrimmed) || cleanTrimmed.contains(cleanTarget) {
-                        AXUIElementPerformAction(element, kAXPressAction as CFString)
-                        return true
-                    }
+    guard AXUIElementCopyAttributeValue(element, kAXRoleAttribute as CFString, &roleVal) == .success,
+          let role = roleVal as? String else {
+        return false
+    }
+    
+    // Immediately prune heavy non-tab content containers (web views, documents, text areas, lists, tables)
+    if role == "AXWebArea" || role == "AXScrollArea" || role == "AXTextArea" || 
+       role == "AXDocument" || role == "AXTable" || role == "AXOutline" || role == "AXList" {
+        return false
+    }
+    
+    if role == "AXRadioButton" || role == "AXTabButton" || role == "AXButton" || role.contains("Tab") {
+        var titleVal: AnyObject?
+        if AXUIElementCopyAttributeValue(element, kAXTitleAttribute as CFString, &titleVal) == .success,
+           let title = titleVal as? String {
+            let trimmed = title.trimmingCharacters(in: .whitespacesAndNewlines)
+            if !trimmed.isEmpty {
+                let cleanTrimmed = cleanTabTitle(trimmed)
+                let cleanTarget = cleanTabTitle(targetTitle)
+                if cleanTrimmed == cleanTarget || cleanTarget.contains(cleanTrimmed) || cleanTrimmed.contains(cleanTarget) {
+                    AXUIElementPerformAction(element, kAXPressAction as CFString)
+                    return true
                 }
             }
         }
     }
     
-    var childrenVal: AnyObject?
-    if AXUIElementCopyAttributeValue(element, kAXChildrenAttribute as CFString, &childrenVal) == .success,
-       let children = childrenVal as? [AXUIElement] {
-           for child in children {
-               if selectTabIfNeeded(element: child, targetTitle: targetTitle) {
-                   return true
-               }
-           }
+    // Only descend into children if within search depth limit
+    if depth < 3 {
+        var childrenVal: AnyObject?
+        if AXUIElementCopyAttributeValue(element, kAXChildrenAttribute as CFString, &childrenVal) == .success,
+           let children = childrenVal as? [AXUIElement] {
+            for child in children {
+                if selectTabIfNeeded(element: child, targetTitle: targetTitle, depth: depth + 1, visitedCount: &visitedCount) {
+                    return true
+                }
+            }
+        }
     }
     return false
+}
+
+private func selectTabIfNeeded(element: AXUIElement, targetTitle: String) -> Bool {
+    var visitedCount = 0
+    return selectTabIfNeeded(element: element, targetTitle: targetTitle, depth: 0, visitedCount: &visitedCount)
 }
 
 private struct CachedThumbnail {
@@ -93,6 +117,7 @@ class WindowList {
     private static var iconCache: [pid_t: NSImage] = [:]
     private static let iconCacheLock = NSLock()
     private static var raiseGeneration: Int = 0
+    private static let raiseGenerationLock = NSLock()
     
     private static func getAppIcon(for pid: pid_t) -> NSImage? {
         iconCacheLock.lock()
@@ -678,246 +703,248 @@ class WindowList {
     
     static func raiseWindow(window: WindowInfo) {
         // Increment generation to cancel any stale delayed raises from previous calls
+        raiseGenerationLock.lock()
         raiseGeneration += 1
         let currentGen = raiseGeneration
+        raiseGenerationLock.unlock()
         
         logMessage("raiseWindow called for target '\(window.ownerName):\(window.title)' (id=\(window.id), pid=\(window.pid)) gen=\(currentGen)")
-        // 1. Activate the owning application
-        guard let app = NSRunningApplication(processIdentifier: window.pid) else {
-            logMessage("  Error: Could not retrieve NSRunningApplication for pid \(window.pid)")
-            return
-        }
         
-        app.activate()
-        logMessage("  activate() called for \(app.localizedName ?? "")")
-        
-        // For placeholder windows (apps running with no open windows), activation is sufficient
-        if window.bounds == CGRect.zero {
-            logMessage("  Placeholder window targeted, returning early after activation")
-            return
-        }
-        
-        let appRef = AXUIElementCreateApplication(window.pid)
-        
-        func performAXRaise(axWindow: AXUIElement) {
-            var minimizedValue: AnyObject?
-            if AXUIElementCopyAttributeValue(axWindow, kAXMinimizedAttribute as CFString, &minimizedValue) == .success,
-               let isMin = minimizedValue as? Bool, isMin {
-                AXUIElementSetAttributeValue(axWindow, kAXMinimizedAttribute as CFString, kCFBooleanFalse)
+        // Execute the entire activation and AX raising asynchronously off the main thread
+        // to guarantee OptTab UI NEVER blocks or beachballs, even if the target app is frozen.
+        DispatchQueue.global(qos: .userInteractive).async {
+            self.raiseGenerationLock.lock()
+            let isCurrent = (currentGen == self.raiseGeneration)
+            self.raiseGenerationLock.unlock()
+            guard isCurrent else { return }
+            
+            // 1. Activate the owning application
+            guard let app = NSRunningApplication(processIdentifier: window.pid) else {
+                logMessage("  Error: Could not retrieve NSRunningApplication for pid \(window.pid)")
+                return
             }
             
-            AXUIElementSetAttributeValue(appRef, kAXMainWindowAttribute as CFString, axWindow)
-            AXUIElementSetAttributeValue(appRef, kAXFocusedWindowAttribute as CFString, axWindow)
-            AXUIElementSetAttributeValue(axWindow, kAXMainAttribute as CFString, kCFBooleanTrue)
-            AXUIElementSetAttributeValue(axWindow, kAXFocusedAttribute as CFString, kCFBooleanTrue)
-            AXUIElementPerformAction(axWindow, kAXRaiseAction as CFString)
-            
-            // Activate app AFTER updating AX attributes so macOS brings the selected window forward
             app.activate()
-            AXUIElementPerformAction(axWindow, kAXRaiseAction as CFString)
-        }
-        
-        @discardableResult
-        func tryRaise() -> Bool {
-            var axElements: [AXUIElement] = []
+            logMessage("  activate() called for \(app.localizedName ?? "")")
             
-            var windowsValue: AnyObject?
-            if AXUIElementCopyAttributeValue(appRef, kAXWindowsAttribute as CFString, &windowsValue) == .success,
-               let axWindows = windowsValue as? [AXUIElement] {
-                axElements.append(contentsOf: axWindows)
+            // For placeholder windows (apps running with no open windows), activation is sufficient
+            if window.bounds == CGRect.zero {
+                logMessage("  Placeholder window targeted, returning early after activation")
+                return
             }
             
-            var childrenValue: AnyObject?
-            if AXUIElementCopyAttributeValue(appRef, kAXChildrenAttribute as CFString, &childrenValue) == .success,
-               let axChildren = childrenValue as? [AXUIElement] {
-                axElements.append(contentsOf: axChildren)
-            }
+            let appRef = AXUIElementCreateApplication(window.pid)
+            AXUIElementSetMessagingTimeout(appRef, 0.05)
             
-            var axWindows: [AXUIElement] = []
-            for element in axElements {
-                var roleValue: AnyObject?
-                if AXUIElementCopyAttributeValue(element, kAXRoleAttribute as CFString, &roleValue) == .success,
-                   let role = roleValue as? String, role == kAXWindowRole {
-                    axWindows.append(element)
+            func performAXRaise(axWindow: AXUIElement) {
+                AXUIElementSetMessagingTimeout(axWindow, 0.05)
+                var minimizedValue: AnyObject?
+                if AXUIElementCopyAttributeValue(axWindow, kAXMinimizedAttribute as CFString, &minimizedValue) == .success,
+                   let isMin = minimizedValue as? Bool, isMin {
+                    AXUIElementSetAttributeValue(axWindow, kAXMinimizedAttribute as CFString, kCFBooleanFalse)
                 }
+                
+                AXUIElementSetAttributeValue(appRef, kAXMainWindowAttribute as CFString, axWindow)
+                AXUIElementSetAttributeValue(appRef, kAXFocusedWindowAttribute as CFString, axWindow)
+                AXUIElementSetAttributeValue(axWindow, kAXMainAttribute as CFString, kCFBooleanTrue)
+                AXUIElementSetAttributeValue(axWindow, kAXFocusedAttribute as CFString, kCFBooleanTrue)
+                AXUIElementPerformAction(axWindow, kAXRaiseAction as CFString)
+                
+                // Activate app AFTER updating AX attributes so macOS brings the selected window forward
+                app.activate()
+                AXUIElementPerformAction(axWindow, kAXRaiseAction as CFString)
             }
             
-            logMessage("  tryRaise: found \(axWindows.count) AXWindow elements")
-            
-            if axWindows.isEmpty {
+            @discardableResult
+            func tryRaise() -> Bool {
+                self.raiseGenerationLock.lock()
+                let stillCurrent = (currentGen == self.raiseGeneration)
+                self.raiseGenerationLock.unlock()
+                guard stillCurrent else { return false }
+                
+                var windowsValue: AnyObject?
+                guard AXUIElementCopyAttributeValue(appRef, kAXWindowsAttribute as CFString, &windowsValue) == .success,
+                      let axWindows = windowsValue as? [AXUIElement] else {
+                    logMessage("  tryRaise: found 0 AXWindow elements")
+                    return false
+                }
+                
+                logMessage("  tryRaise: found \(axWindows.count) AXWindow elements")
+                if axWindows.isEmpty {
+                    return false
+                }
+                
+                // Match using private but reliable _AXUIElementGetWindow
+                for axWindow in axWindows {
+                    AXUIElementSetMessagingTimeout(axWindow, 0.05)
+                    let id = getWindowID(from: axWindow)
+                    var titleValue: AnyObject?
+                    AXUIElementCopyAttributeValue(axWindow, kAXTitleAttribute as CFString, &titleValue)
+                    let axTitle = titleValue as? String ?? ""
+                    logMessage("    Checking AXWindow ID: \(id ?? 0) | Title: \(axTitle)")
+                    
+                    if let id = id, id == window.id {
+                        logMessage("      Match found by WindowID! Raising window.")
+                        performAXRaise(axWindow: axWindow)
+                        return true
+                    }
+                }
+                
+                // Fallback 1: match by title
+                for axWindow in axWindows {
+                    var titleValue: AnyObject?
+                    AXUIElementCopyAttributeValue(axWindow, kAXTitleAttribute as CFString, &titleValue)
+                    let axTitle = titleValue as? String ?? ""
+                    
+                    if !axTitle.isEmpty && titlesMatch(axTitle: axTitle, windowTitle: window.title) {
+                        logMessage("      Match found by title Fallback! '\(axTitle)' vs '\(window.title)'. Raising.")
+                        performAXRaise(axWindow: axWindow)
+                        return true
+                    }
+                }
+                
+                // Fallback 2: Tab matching (find tab elements inside window and switch tabs)
+                for axWindow in axWindows {
+                    if selectTabIfNeeded(element: axWindow, targetTitle: window.title) {
+                        logMessage("      Match found by tab fallback! Raising.")
+                        performAXRaise(axWindow: axWindow)
+                        return true
+                    }
+                }
+                logMessage("      tryRaise: No match found by AX ID/Title.")
                 return false
             }
             
-            // Match using private but reliable _AXUIElementGetWindow
-            for axWindow in axWindows {
-                let id = getWindowID(from: axWindow)
-                var titleValue: AnyObject?
-                AXUIElementCopyAttributeValue(axWindow, kAXTitleAttribute as CFString, &titleValue)
-                let axTitle = titleValue as? String ?? ""
-                logMessage("    Checking AXWindow ID: \(id ?? 0) | Title: \(axTitle)")
+            // AppleScript fallback for applications when standard AX activation fails.
+            func tryAppleScriptRaise() -> Bool {
+                let targetTitle = window.title
+                let appScriptName = window.ownerName
+                let targetID = window.id
+                let targetX = Int(window.bounds.origin.x)
+                let targetY = Int(window.bounds.origin.y)
                 
-                if let id = id, id == window.id {
-                    logMessage("      Match found by WindowID! Raising window.")
-                    performAXRaise(axWindow: axWindow)
-                    return true
+                var titleFragments: [String] = []
+                if targetTitle.contains("…") {
+                    titleFragments = targetTitle.components(separatedBy: "…")
+                        .map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
+                        .filter { !$0.isEmpty }
+                } else {
+                    titleFragments = [targetTitle]
                 }
-            }
-            
-            // Fallback 1: match by title
-            for axWindow in axWindows {
-                var titleValue: AnyObject?
-                AXUIElementCopyAttributeValue(axWindow, kAXTitleAttribute as CFString, &titleValue)
-                let axTitle = titleValue as? String ?? ""
                 
-                if !axTitle.isEmpty && titlesMatch(axTitle: axTitle, windowTitle: window.title) {
-                    logMessage("      Match found by title Fallback! '\(axTitle)' vs '\(window.title)'. Raising.")
-                    performAXRaise(axWindow: axWindow)
-                    return true
+                var conditions: [String] = []
+                for fragment in titleFragments {
+                    let escaped = fragment.replacingOccurrences(of: "\\", with: "\\\\")
+                        .replacingOccurrences(of: "\"", with: "\\\"")
+                    conditions.append("winTitle contains \"\(escaped)\"")
                 }
-            }
-            
-            // Fallback 2: Tab matching (find tab elements inside window and switch tabs)
-            for axWindow in axWindows {
-                if selectTabIfNeeded(element: axWindow, targetTitle: window.title) {
-                    logMessage("      Match found by tab fallback! Raising.")
-                    performAXRaise(axWindow: axWindow)
-                    return true
-                }
-            }
-            logMessage("      tryRaise: No match found by AX ID/Title.")
-            return false
-        }
-        
-        // AppleScript fallback for applications when standard AX activation fails.
-        // Multi-tier AppleScript fallback for applications when standard AX activation fails.
-        // Tiers: 1. AppleScript Window ID -> 2. Title Fragments -> 3. Window Position (Screen Coordinates)
-        func tryAppleScriptRaise() -> Bool {
-            let targetTitle = window.title
-            let appScriptName = window.ownerName
-            let targetID = window.id
-            let targetX = Int(window.bounds.origin.x)
-            let targetY = Int(window.bounds.origin.y)
-            
-            var titleFragments: [String] = []
-            if targetTitle.contains("…") {
-                titleFragments = targetTitle.components(separatedBy: "…")
-                    .map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
-                    .filter { !$0.isEmpty }
-            } else {
-                titleFragments = [targetTitle]
-            }
-            
-            var conditions: [String] = []
-            for fragment in titleFragments {
-                let escaped = fragment.replacingOccurrences(of: "\\", with: "\\\\")
-                    .replacingOccurrences(of: "\"", with: "\\\"")
-                conditions.append("winTitle contains \"\(escaped)\"")
-            }
-            let conditionStr = conditions.isEmpty ? "false" : conditions.joined(separator: " and ")
-            
-            let script = """
-            tell application "\(appScriptName)"
-                -- Tier 1: Match by AppleScript Window ID
-                try
-                    repeat with w in (get windows)
-                        try
-                            if (id of w as integer) is equal to \(targetID) then
-                                set index of w to 1
-                                activate
-                                return "ok_id"
-                            end if
-                        end try
-                    end repeat
-                end try
+                let conditionStr = conditions.isEmpty ? "false" : conditions.joined(separator: " and ")
                 
-                -- Tier 2: Match by Title Fragment
-                try
-                    repeat with w in (get windows)
-                        try
-                            set winTitle to name of w
-                            if \(conditionStr) then
-                                set index of w to 1
-                                activate
-                                return "ok_title"
-                            end if
-                        end try
-                    end repeat
-                end try
+                let script = """
+                with timeout of 1 seconds
+                tell application "\(appScriptName)"
+                    -- Tier 1: Match by AppleScript Window ID
+                    try
+                        repeat with w in (get windows)
+                            try
+                                if (id of w as integer) is equal to \(targetID) then
+                                    set index of w to 1
+                                    activate
+                                    return "ok_id"
+                                end if
+                            end try
+                        end repeat
+                    end try
+                    
+                    -- Tier 2: Match by Title Fragment
+                    try
+                        repeat with w in (get windows)
+                            try
+                                set winTitle to name of w
+                                if \(conditionStr) then
+                                    set index of w to 1
+                                    activate
+                                    return "ok_title"
+                                end if
+                            end try
+                        end repeat
+                    end try
+                    
+                    -- Tier 3: Match by Window Position (Screen Coordinates)
+                    try
+                        repeat with w in (get windows)
+                            try
+                                set b to bounds of w
+                                set wX to item 1 of b
+                                set wY to item 2 of b
+                                set dX to wX - \(targetX)
+                                if dX < 0 then set dX to -dX
+                                set dY to wY - \(targetY)
+                                if dY < 0 then set dY to -dY
+                                if dX < 50 and dY < 50 then
+                                    set index of w to 1
+                                    activate
+                                    return "ok_bounds"
+                                end if
+                            end try
+                        end repeat
+                    end try
+                    
+                    -- Fallback Tier 4: Generic activate
+                    try
+                        reopen
+                        activate
+                        return "ok_fallback"
+                    end try
+                    return "not_found"
+                end tell
+                end timeout
+                """
                 
-                -- Tier 3: Match by Window Position (Screen Coordinates)
-                try
-                    repeat with w in (get windows)
-                        try
-                            set b to bounds of w
-                            set wX to item 1 of b
-                            set wY to item 2 of b
-                            set dX to wX - \(targetX)
-                            if dX < 0 then set dX to -dX
-                            set dY to wY - \(targetY)
-                            if dY < 0 then set dY to -dY
-                            if dX < 50 and dY < 50 then
-                                set index of w to 1
-                                activate
-                                return "ok_bounds"
-                            end if
-                        end try
-                    end repeat
-                end try
+                logMessage("      AppleScript fallback: Running multi-tier script for '\(appScriptName)' (targetID=\(targetID) title='\(targetTitle)' pos=(\(targetX),\(targetY)))")
                 
-                -- Fallback Tier 4: Generic activate
-                try
-                    reopen
-                    activate
-                    return "ok_fallback"
-                end try
-                return "not_found"
-            end tell
-            """
-            
-            logMessage("      AppleScript fallback: Running multi-tier script for '\(appScriptName)' (targetID=\(targetID) title='\(targetTitle)' pos=(\(targetX),\(targetY)))")
-            
-            if let appleScript = NSAppleScript(source: script) {
-                var errorInfo: NSDictionary?
-                let result = appleScript.executeAndReturnError(&errorInfo)
-                let resultStr = result.stringValue ?? "nil"
-                logMessage("      AppleScript result: \(resultStr)")
-                if resultStr.hasPrefix("ok") {
-                    return true
+                if let appleScript = NSAppleScript(source: script) {
+                    var errorInfo: NSDictionary?
+                    let result = appleScript.executeAndReturnError(&errorInfo)
+                    let resultStr = result.stringValue ?? "nil"
+                    logMessage("      AppleScript result: \(resultStr)")
+                    if resultStr.hasPrefix("ok") {
+                        return true
+                    }
+                    if let err = errorInfo {
+                        logMessage("      AppleScript error: \(err)")
+                    }
                 }
-                if let err = errorInfo {
-                    logMessage("      AppleScript error: \(err)")
+                return false
+            }
+            
+            // Try immediately on background queue
+            let raised = tryRaise()
+            
+            // If AX didn't find the target window, execute AppleScript fallback
+            if !raised {
+                self.raiseGenerationLock.lock()
+                let isStillCurrent = (currentGen == self.raiseGeneration)
+                self.raiseGenerationLock.unlock()
+                if isStillCurrent {
+                    _ = tryAppleScriptRaise()
                 }
             }
-            return false
-        }
-        
-        // Try immediately
-        let raised = tryRaise()
-        
-        // For Chromium apps where AX can't find the target window, use AppleScript on a background thread
-        if !raised {
-            // Run AppleScript on a background thread to avoid blocking the UI
-            DispatchQueue.global(qos: .userInteractive).async {
-                // Check if this raise request is still current
-                guard currentGen == raiseGeneration else {
-                    logMessage("      AppleScript cancelled — stale generation \(currentGen) vs \(raiseGeneration)")
-                    return
+            
+            // Schedule delayed AX retries on background queue (lightweight, non-blocking)
+            let delays = [0.1, 0.25, 0.5]
+            for delay in delays {
+                DispatchQueue.global(qos: .userInteractive).asyncAfter(deadline: .now() + delay) {
+                    self.raiseGenerationLock.lock()
+                    let retryCurrent = (currentGen == self.raiseGeneration)
+                    self.raiseGenerationLock.unlock()
+                    
+                    guard retryCurrent else {
+                        logMessage("  Delayed tryRaise cancelled — stale generation \(currentGen) vs \(self.raiseGeneration)")
+                        return
+                    }
+                    _ = tryRaise()
                 }
-                _ = tryAppleScriptRaise()
-            }
-        }
-        
-        // Schedule delayed AX retries on main thread (lightweight, non-blocking)
-        // These handle apps that need time to expose AX windows after activate()
-        // Each callback checks raiseGeneration to cancel if a newer raise supersedes this one.
-        let delays = [0.1, 0.25, 0.5]
-        for delay in delays {
-            DispatchQueue.main.asyncAfter(deadline: .now() + delay) {
-                guard currentGen == raiseGeneration else {
-                    logMessage("  Delayed tryRaise cancelled — stale generation \(currentGen) vs \(raiseGeneration)")
-                    return
-                }
-                _ = tryRaise()
             }
         }
     }
@@ -927,11 +954,13 @@ class WindowList {
     @discardableResult
     static func performWindowAction(window: WindowInfo, actionAttribute: CFString) -> Bool {
         let appRef = AXUIElementCreateApplication(window.pid)
+        AXUIElementSetMessagingTimeout(appRef, 0.05)
         var windowsValue: AnyObject?
         guard AXUIElementCopyAttributeValue(appRef, kAXWindowsAttribute as CFString, &windowsValue) == .success,
               let axWindows = windowsValue as? [AXUIElement] else { return false }
         
         for axWindow in axWindows {
+            AXUIElementSetMessagingTimeout(axWindow, 0.05)
             if let id = getWindowID(from: axWindow), id == window.id {
                 AXUIElementSetAttributeValue(appRef, kAXFrontmostAttribute as CFString, kCFBooleanTrue)
                 AXUIElementSetAttributeValue(appRef, kAXFocusedWindowAttribute as CFString, axWindow)
@@ -952,6 +981,7 @@ class WindowList {
     static func minimizeWindow(window: WindowInfo) {
         logAction("[minimizeWindow] Called for '\(window.ownerName):\(window.title)' pid=\(window.pid) id=\(window.id)")
         let appRef = AXUIElementCreateApplication(window.pid)
+        AXUIElementSetMessagingTimeout(appRef, 0.05)
         var windowsValue: AnyObject?
         let copyResult = AXUIElementCopyAttributeValue(appRef, kAXWindowsAttribute as CFString, &windowsValue)
         guard copyResult == .success, let axWindows = windowsValue as? [AXUIElement] else {
@@ -961,6 +991,7 @@ class WindowList {
         logAction("[minimizeWindow] Got \(axWindows.count) AX windows")
         
         for axWindow in axWindows {
+            AXUIElementSetMessagingTimeout(axWindow, 0.05)
             if let id = getWindowID(from: axWindow), id == window.id {
                 let result = AXUIElementSetAttributeValue(axWindow, kAXMinimizedAttribute as CFString, kCFBooleanTrue)
                 logAction("[minimizeWindow] SetAttributeValue result=\(result.rawValue) (0=success)")
@@ -980,6 +1011,7 @@ class WindowList {
     static func exitFullScreen(window: WindowInfo) {
         logAction("[exitFullScreen] Called for '\(window.ownerName):\(window.title)' pid=\(window.pid) id=\(window.id)")
         let appRef = AXUIElementCreateApplication(window.pid)
+        AXUIElementSetMessagingTimeout(appRef, 0.05)
         var windowsValue: AnyObject?
         let copyResult = AXUIElementCopyAttributeValue(appRef, kAXWindowsAttribute as CFString, &windowsValue)
         guard copyResult == .success, let axWindows = windowsValue as? [AXUIElement] else {
@@ -989,6 +1021,7 @@ class WindowList {
         logAction("[exitFullScreen] Got \(axWindows.count) AX windows")
         
         for axWindow in axWindows {
+            AXUIElementSetMessagingTimeout(axWindow, 0.05)
             if let id = getWindowID(from: axWindow), id == window.id {
                 // Check current fullscreen status first
                 var fsValue: AnyObject?
@@ -1007,9 +1040,12 @@ class WindowList {
     static func getActiveWindowID() -> CGWindowID? {
         guard let frontmostApp = NSWorkspace.shared.frontmostApplication else { return nil }
         let appRef = AXUIElementCreateApplication(frontmostApp.processIdentifier)
+        AXUIElementSetMessagingTimeout(appRef, 0.05)
         var windowValue: AnyObject?
         if AXUIElementCopyAttributeValue(appRef, kAXFocusedWindowAttribute as CFString, &windowValue) == .success {
-            if let id = getWindowID(from: windowValue as! AXUIElement) {
+            let focusedWindow = windowValue as! AXUIElement
+            AXUIElementSetMessagingTimeout(focusedWindow, 0.05)
+            if let id = getWindowID(from: focusedWindow) {
                 return id
             }
         }
@@ -1080,10 +1116,12 @@ class WindowList {
         logAction("[resizeWindow] Snapping window id=\(window.id) action=\(action) targetFrame=\(targetFrame) axX=\(axX) axY=\(axY)")
         
         let appRef = AXUIElementCreateApplication(window.pid)
+        AXUIElementSetMessagingTimeout(appRef, 0.05)
         var windowsValue: AnyObject?
         if AXUIElementCopyAttributeValue(appRef, kAXWindowsAttribute as CFString, &windowsValue) == .success,
            let axWindows = windowsValue as? [AXUIElement] {
             for axWindow in axWindows {
+                AXUIElementSetMessagingTimeout(axWindow, 0.05)
                 if let id = getWindowID(from: axWindow), id == window.id {
                     var position = CGPoint(x: axX, y: axY)
                     var size = targetFrame.size
