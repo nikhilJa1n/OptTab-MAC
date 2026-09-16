@@ -18,6 +18,7 @@ class AppDelegate: NSObject, NSApplicationDelegate, HotkeyManagerDelegate {
     var activeWindows: [WindowInfo] = []
     var currentIndex: Int = 0
     var mruWindowIDs: [CGWindowID] = []
+    var windowPIDMap: [CGWindowID: pid_t] = [:]
     var lastRaisedWindowID: CGWindowID?
     var previousActiveWindowIDBeforeSwitch: CGWindowID?
     var lastRaisedTime: Date = Date.distantPast
@@ -160,7 +161,7 @@ class AppDelegate: NSObject, NSApplicationDelegate, HotkeyManagerDelegate {
             DispatchQueue.main.asyncAfter(deadline: .now() + delay) { [weak self] in
                 // Check if AX windows are available now
                 let appRef = AXUIElementCreateApplication(window.pid)
-                AXUIElementSetMessagingTimeout(appRef, 0.05)
+                AXUIElementSetMessagingTimeout(appRef, 0.25)
                 var windowsValue: AnyObject?
                 guard AXUIElementCopyAttributeValue(appRef, kAXWindowsAttribute as CFString, &windowsValue) == .success,
                       let axWindows = windowsValue as? [AXUIElement], !axWindows.isEmpty else {
@@ -193,6 +194,7 @@ class AppDelegate: NSObject, NSApplicationDelegate, HotkeyManagerDelegate {
                 previousActiveWindowIDBeforeSwitch = mruWindowIDs.first
                 mruWindowIDs.removeAll(where: { $0 == target.id })
                 mruWindowIDs.insert(target.id, at: 0)
+                windowPIDMap[target.id] = target.pid
                 lastRaisedWindowID = target.id
                 lastRaisedTime = Date()
                 WindowList.raiseWindow(window: target)
@@ -272,18 +274,24 @@ class AppDelegate: NSObject, NSApplicationDelegate, HotkeyManagerDelegate {
         
         // Tabbed window reconciliation:
         // When tab grouping is enabled, if an app's active window ID shifted between tabs
-        // (e.g. Terminal tabs sharing the same frame), update mruWindowIDs and
+        // (e.g. Terminal tabs sharing the same frame), update mruWindowIDs, windowPIDMap, and
         // previousActiveWindowIDBeforeSwitch so the MRU tracking aligns with the currently active tab.
         if appState.groupTabbedWindows {
             for window in rawWindows where window.isAXValid {
+                windowPIDMap[window.id] = window.pid
                 if !mruWindowIDs.contains(window.id) {
                     if let staleID = mruWindowIDs.first(where: { trackedID in
-                        !rawWindows.contains(where: { $0.id == trackedID })
+                        !rawWindows.contains(where: { $0.id == trackedID }) && windowPIDMap[trackedID] == window.pid
                     }), let idx = mruWindowIDs.firstIndex(of: staleID) {
                         mruWindowIDs[idx] = window.id
+                        windowPIDMap.removeValue(forKey: staleID)
                         if previousActiveWindowIDBeforeSwitch == staleID {
                             previousActiveWindowIDBeforeSwitch = window.id
                         }
+                        if lastRaisedWindowID == staleID {
+                            lastRaisedWindowID = window.id
+                        }
+                        logMessage("[getSortedWindowsAndIndex] Reconciled tab shift for \(window.ownerName): replaced stale ID \(staleID) with active tab \(window.id)")
                     }
                 }
             }

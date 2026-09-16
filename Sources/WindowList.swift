@@ -184,15 +184,33 @@ class WindowList {
         var validAXWindowIDs: Set<CGWindowID> = []
         var axWindowTitles: [CGWindowID: String] = [:]
         var axMinimizedStates: [CGWindowID: Bool] = [:]
+        var activeAXWindowIDForPID: [pid_t: CGWindowID] = [:]
         let axLock = NSLock()
         
         let regularApps = NSWorkspace.shared.runningApplications.filter { $0.activationPolicy == .regular }
         
-        // Concurrent parallel scanning across CPU cores with 50ms IPC timeout per app (prevents lag from busy/unresponsive apps)
+        // Concurrent parallel scanning across CPU cores with 250ms IPC timeout per app (prevents lag while allowing responsive apps to complete)
         DispatchQueue.concurrentPerform(iterations: regularApps.count) { index in
             let app = regularApps[index]
             let appRef = AXUIElementCreateApplication(app.processIdentifier)
-            AXUIElementSetMessagingTimeout(appRef, 0.05)
+            AXUIElementSetMessagingTimeout(appRef, 0.25)
+            
+            // Check for focused or main window to identify the currently active tab/window
+            var activeID: CGWindowID? = nil
+            var focusedVal: AnyObject?
+            if AXUIElementCopyAttributeValue(appRef, kAXFocusedWindowAttribute as CFString, &focusedVal) == .success,
+               let focusedEl = focusedVal as! AXUIElement? {
+                AXUIElementSetMessagingTimeout(focusedEl, 0.25)
+                activeID = getWindowID(from: focusedEl)
+            }
+            if activeID == nil {
+                var mainVal: AnyObject?
+                if AXUIElementCopyAttributeValue(appRef, kAXMainWindowAttribute as CFString, &mainVal) == .success,
+                   let mainEl = mainVal as! AXUIElement? {
+                    AXUIElementSetMessagingTimeout(mainEl, 0.25)
+                    activeID = getWindowID(from: mainEl)
+                }
+            }
             
             var axElements: [AXUIElement] = []
             var windowsValue: AnyObject?
@@ -201,12 +219,19 @@ class WindowList {
                 axElements.append(contentsOf: axWindows)
             }
             
+            // Ensure focused/main window is always present in axElements
+            if let focused = (focusedVal as! AXUIElement?) {
+                if !axElements.contains(where: { CFEqual($0, focused) }) {
+                    axElements.insert(focused, at: 0)
+                }
+            }
+            
             var localIDs: Set<CGWindowID> = []
             var localTitles: [CGWindowID: String] = [:]
             var localMinStates: [CGWindowID: Bool] = [:]
             
             for axWindow in axElements {
-                AXUIElementSetMessagingTimeout(axWindow, 0.05)
+                AXUIElementSetMessagingTimeout(axWindow, 0.25)
                 
                 // Check role: must be AXWindow
                 var roleValue: AnyObject?
@@ -257,6 +282,9 @@ class WindowList {
             validAXWindowIDs.formUnion(localIDs)
             axWindowTitles.merge(localTitles) { current, _ in current }
             axMinimizedStates.merge(localMinStates) { current, _ in current }
+            if let aID = activeID {
+                activeAXWindowIDForPID[app.processIdentifier] = aID
+            }
             axLock.unlock()
         }
         
@@ -431,16 +459,33 @@ class WindowList {
         if groupTabbedWindows {
             let tolerance: CGFloat = 20.0
             var seenBoundsListForPID = [pid_t: [CGRect]]()
+            var minOffsetForWindow = [CGWindowID: Int]()
             
-            // 1. Process all genuine AX-valid windows first so active tabs claim their bounds
-            for window in windows where window.isAXValid {
-                seenBoundsListForPID[window.pid, default: []].append(window.bounds)
-                uniqueWindows.append(window)
+            // Map original CGWindowList index for each window
+            let originalOffsets = Dictionary(uniqueKeysWithValues: windows.enumerated().map { ($0.element.id, $0.offset) })
+            
+            // Prioritize candidates so that:
+            // 1. The active/focused tab (matching activeAXWindowIDForPID[window.pid]) claims the frame first
+            // 2. Genuine AX-valid windows
+            // 3. Other non-AX windows
+            // Within each tier, preserve the original WindowServer Z-order
+            let sortedCandidates = windows.sorted { w1, w2 in
+                let activeID1 = activeAXWindowIDForPID[w1.pid]
+                let isW1Active = (activeID1 != nil && w1.id == activeID1)
+                let activeID2 = activeAXWindowIDForPID[w2.pid]
+                let isW2Active = (activeID2 != nil && w2.id == activeID2)
+                
+                if isW1Active != isW2Active {
+                    return isW1Active
+                }
+                if w1.isAXValid != w2.isAXValid {
+                    return w1.isAXValid
+                }
+                return (originalOffsets[w1.id] ?? 0) < (originalOffsets[w2.id] ?? 0)
             }
             
-            // 2. Filter non-AX entries (duplicates/background tabs)
-            for window in windows where !window.isAXValid {
-                let matchesExisting = seenBoundsListForPID[window.pid, default: []].contains { existingRect in
+            for window in sortedCandidates {
+                let existingMatchIndex = seenBoundsListForPID[window.pid, default: []].firstIndex { existingRect in
                     let dX = abs(existingRect.origin.x - window.bounds.origin.x)
                     let dY = abs(existingRect.origin.y - window.bounds.origin.y)
                     let dW = abs(existingRect.width - window.bounds.width)
@@ -448,17 +493,29 @@ class WindowList {
                     return dX <= tolerance && dY <= tolerance && dW <= tolerance && dH <= tolerance
                 }
                 
-                if !matchesExisting {
+                let myOffset = originalOffsets[window.id] ?? 0
+                
+                if let _ = existingMatchIndex {
+                    // This is a duplicate tab sharing the frame of an already kept window for this app.
+                    logMessage("[TabDedup] Filtered tab duplicate: '\(window.title)' (\(window.ownerName)) pid=\(window.pid) bounds=\(window.bounds)")
+                    // Ensure the kept active tab window inherits the earliest Z-order offset among all its merged tabs
+                    if let ownerWin = uniqueWindows.first(where: { $0.pid == window.pid &&
+                        abs($0.bounds.origin.x - window.bounds.origin.x) <= tolerance &&
+                        abs($0.bounds.origin.y - window.bounds.origin.y) <= tolerance &&
+                        abs($0.bounds.width - window.bounds.width) <= tolerance &&
+                        abs($0.bounds.height - window.bounds.height) <= tolerance
+                    }) {
+                        minOffsetForWindow[ownerWin.id] = min(minOffsetForWindow[ownerWin.id] ?? myOffset, myOffset)
+                    }
+                } else {
                     seenBoundsListForPID[window.pid, default: []].append(window.bounds)
                     uniqueWindows.append(window)
-                } else {
-                    logMessage("[TabDedup] Filtered non-AX tab duplicate: '\(window.title)' (\(window.ownerName)) pid=\(window.pid) bounds=\(window.bounds)")
+                    minOffsetForWindow[window.id] = myOffset
                 }
             }
             
-            // 3. Restore the original Z-order sequence from windows
-            let orderMap = Dictionary(uniqueKeysWithValues: windows.enumerated().map { ($0.element.id, $0.offset) })
-            uniqueWindows.sort { (orderMap[$0.id] ?? 0) < (orderMap[$1.id] ?? 0) }
+            // Restore proper Z-order sequence using the earliest offset among duplicate tabs
+            uniqueWindows.sort { (minOffsetForWindow[$0.id] ?? 0) < (minOffsetForWindow[$1.id] ?? 0) }
         } else {
             // Original logic: Keep all AX-valid windows. For non-AX-valid windows (tabs/helpers),
             // only keep them if they don't overlap with already kept windows of the same app on the same space.
@@ -736,10 +793,10 @@ class WindowList {
             }
             
             let appRef = AXUIElementCreateApplication(window.pid)
-            AXUIElementSetMessagingTimeout(appRef, 0.05)
+            AXUIElementSetMessagingTimeout(appRef, 0.35)
             
             func performAXRaise(axWindow: AXUIElement) {
-                AXUIElementSetMessagingTimeout(axWindow, 0.05)
+                AXUIElementSetMessagingTimeout(axWindow, 0.35)
                 var minimizedValue: AnyObject?
                 if AXUIElementCopyAttributeValue(axWindow, kAXMinimizedAttribute as CFString, &minimizedValue) == .success,
                    let isMin = minimizedValue as? Bool, isMin {
@@ -778,7 +835,7 @@ class WindowList {
                 
                 // Match using private but reliable _AXUIElementGetWindow
                 for axWindow in axWindows {
-                    AXUIElementSetMessagingTimeout(axWindow, 0.05)
+                    AXUIElementSetMessagingTimeout(axWindow, 0.35)
                     let id = getWindowID(from: axWindow)
                     var titleValue: AnyObject?
                     AXUIElementCopyAttributeValue(axWindow, kAXTitleAttribute as CFString, &titleValue)
@@ -965,13 +1022,13 @@ class WindowList {
     @discardableResult
     static func performWindowAction(window: WindowInfo, actionAttribute: CFString) -> Bool {
         let appRef = AXUIElementCreateApplication(window.pid)
-        AXUIElementSetMessagingTimeout(appRef, 0.05)
+        AXUIElementSetMessagingTimeout(appRef, 0.25)
         var windowsValue: AnyObject?
         guard AXUIElementCopyAttributeValue(appRef, kAXWindowsAttribute as CFString, &windowsValue) == .success,
               let axWindows = windowsValue as? [AXUIElement] else { return false }
         
         for axWindow in axWindows {
-            AXUIElementSetMessagingTimeout(axWindow, 0.05)
+            AXUIElementSetMessagingTimeout(axWindow, 0.25)
             if let id = getWindowID(from: axWindow), id == window.id {
                 AXUIElementSetAttributeValue(appRef, kAXFrontmostAttribute as CFString, kCFBooleanTrue)
                 AXUIElementSetAttributeValue(appRef, kAXFocusedWindowAttribute as CFString, axWindow)
@@ -992,7 +1049,7 @@ class WindowList {
     static func minimizeWindow(window: WindowInfo) {
         logAction("[minimizeWindow] Called for '\(window.ownerName):\(window.title)' pid=\(window.pid) id=\(window.id)")
         let appRef = AXUIElementCreateApplication(window.pid)
-        AXUIElementSetMessagingTimeout(appRef, 0.05)
+        AXUIElementSetMessagingTimeout(appRef, 0.25)
         var windowsValue: AnyObject?
         let copyResult = AXUIElementCopyAttributeValue(appRef, kAXWindowsAttribute as CFString, &windowsValue)
         guard copyResult == .success, let axWindows = windowsValue as? [AXUIElement] else {
@@ -1002,7 +1059,7 @@ class WindowList {
         logAction("[minimizeWindow] Got \(axWindows.count) AX windows")
         
         for axWindow in axWindows {
-            AXUIElementSetMessagingTimeout(axWindow, 0.05)
+            AXUIElementSetMessagingTimeout(axWindow, 0.25)
             if let id = getWindowID(from: axWindow), id == window.id {
                 let result = AXUIElementSetAttributeValue(axWindow, kAXMinimizedAttribute as CFString, kCFBooleanTrue)
                 logAction("[minimizeWindow] SetAttributeValue result=\(result.rawValue) (0=success)")
@@ -1022,7 +1079,7 @@ class WindowList {
     static func exitFullScreen(window: WindowInfo) {
         logAction("[exitFullScreen] Called for '\(window.ownerName):\(window.title)' pid=\(window.pid) id=\(window.id)")
         let appRef = AXUIElementCreateApplication(window.pid)
-        AXUIElementSetMessagingTimeout(appRef, 0.05)
+        AXUIElementSetMessagingTimeout(appRef, 0.25)
         var windowsValue: AnyObject?
         let copyResult = AXUIElementCopyAttributeValue(appRef, kAXWindowsAttribute as CFString, &windowsValue)
         guard copyResult == .success, let axWindows = windowsValue as? [AXUIElement] else {
@@ -1032,7 +1089,7 @@ class WindowList {
         logAction("[exitFullScreen] Got \(axWindows.count) AX windows")
         
         for axWindow in axWindows {
-            AXUIElementSetMessagingTimeout(axWindow, 0.05)
+            AXUIElementSetMessagingTimeout(axWindow, 0.25)
             if let id = getWindowID(from: axWindow), id == window.id {
                 // Check current fullscreen status first
                 var fsValue: AnyObject?
@@ -1051,11 +1108,11 @@ class WindowList {
     static func getActiveWindowID() -> CGWindowID? {
         guard let frontmostApp = NSWorkspace.shared.frontmostApplication else { return nil }
         let appRef = AXUIElementCreateApplication(frontmostApp.processIdentifier)
-        AXUIElementSetMessagingTimeout(appRef, 0.05)
+        AXUIElementSetMessagingTimeout(appRef, 0.25)
         var windowValue: AnyObject?
         if AXUIElementCopyAttributeValue(appRef, kAXFocusedWindowAttribute as CFString, &windowValue) == .success {
             let focusedWindow = windowValue as! AXUIElement
-            AXUIElementSetMessagingTimeout(focusedWindow, 0.05)
+            AXUIElementSetMessagingTimeout(focusedWindow, 0.25)
             if let id = getWindowID(from: focusedWindow) {
                 return id
             }
@@ -1127,12 +1184,12 @@ class WindowList {
         logAction("[resizeWindow] Snapping window id=\(window.id) action=\(action) targetFrame=\(targetFrame) axX=\(axX) axY=\(axY)")
         
         let appRef = AXUIElementCreateApplication(window.pid)
-        AXUIElementSetMessagingTimeout(appRef, 0.05)
+        AXUIElementSetMessagingTimeout(appRef, 0.25)
         var windowsValue: AnyObject?
         if AXUIElementCopyAttributeValue(appRef, kAXWindowsAttribute as CFString, &windowsValue) == .success,
            let axWindows = windowsValue as? [AXUIElement] {
             for axWindow in axWindows {
-                AXUIElementSetMessagingTimeout(axWindow, 0.05)
+                AXUIElementSetMessagingTimeout(axWindow, 0.25)
                 if let id = getWindowID(from: axWindow), id == window.id {
                     var position = CGPoint(x: axX, y: axY)
                     var size = targetFrame.size
