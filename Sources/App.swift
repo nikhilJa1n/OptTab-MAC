@@ -631,11 +631,6 @@ class AppDelegate: NSObject, NSApplicationDelegate, HotkeyManagerDelegate {
     }
     
     func hotkeyOptionReleased(force: Bool) {
-        if !force {
-            // If the switcher is the key window, pin it
-            guard !(switcherWindow?.isKeyWindow ?? false) else { return }
-        }
-        
         if switcherWindow?.isVisible ?? false {
             switcherWindow?.hide()
             

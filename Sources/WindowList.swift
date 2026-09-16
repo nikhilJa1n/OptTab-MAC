@@ -461,8 +461,8 @@ class WindowList {
             var seenBoundsListForPID = [pid_t: [CGRect]]()
             var minOffsetForWindow = [CGWindowID: Int]()
             
-            // Map original CGWindowList index for each window
-            let originalOffsets = Dictionary(uniqueKeysWithValues: windows.enumerated().map { ($0.element.id, $0.offset) })
+            // Map original CGWindowList index for each window safely (handles any duplicate IDs from WindowServer)
+            let originalOffsets = Dictionary(windows.enumerated().map { ($0.element.id, $0.offset) }, uniquingKeysWith: { first, _ in first })
             
             // Prioritize candidates so that:
             // 1. The active/focused tab (matching activeAXWindowIDForPID[window.pid]) claims the frame first
@@ -624,6 +624,8 @@ class WindowList {
     private static var cachedShareableContent: SCShareableContent? = nil
     private static var lastContentFetchTime: Date = .distantPast
     private static let contentLock = NSLock()
+    private static let contentFetchLock = NSLock()
+    private static let captureThrottle = DispatchSemaphore(value: 4)
 
     static func prefetchShareableContent() {
         SCShareableContent.getExcludingDesktopWindows(false, onScreenWindowsOnly: false) { content, _ in
@@ -649,25 +651,35 @@ class WindowList {
         }
         cacheLock.unlock()
         
-        // Retrieve or fetch SCShareableContent
+        // Retrieve or fetch SCShareableContent (single-flight across all concurrent thumbnail requests)
         contentLock.lock()
         var content = cachedShareableContent
-        let fetchAge = Date().timeIntervalSince(lastContentFetchTime)
+        var fetchAge = Date().timeIntervalSince(lastContentFetchTime)
         contentLock.unlock()
         
         if content == nil || fetchAge > 5.0 {
-            let sem = DispatchSemaphore(value: 0)
-            SCShareableContent.getExcludingDesktopWindows(false, onScreenWindowsOnly: false) { freshContent, error in
-                if let freshContent = freshContent {
-                    self.contentLock.lock()
-                    self.cachedShareableContent = freshContent
-                    self.lastContentFetchTime = Date()
-                    self.contentLock.unlock()
-                    content = freshContent
+            contentFetchLock.lock()
+            // Re-check after acquiring lock in case another thread just completed the fetch
+            contentLock.lock()
+            content = cachedShareableContent
+            fetchAge = Date().timeIntervalSince(lastContentFetchTime)
+            contentLock.unlock()
+            
+            if content == nil || fetchAge > 5.0 {
+                let sem = DispatchSemaphore(value: 0)
+                SCShareableContent.getExcludingDesktopWindows(false, onScreenWindowsOnly: false) { freshContent, error in
+                    if let freshContent = freshContent {
+                        self.contentLock.lock()
+                        self.cachedShareableContent = freshContent
+                        self.lastContentFetchTime = Date()
+                        self.contentLock.unlock()
+                        content = freshContent
+                    }
+                    sem.signal()
                 }
-                sem.signal()
+                _ = sem.wait(timeout: .now() + 0.4)
             }
-            _ = sem.wait(timeout: .now() + 0.4)
+            contentFetchLock.unlock()
         }
         
         guard let shareableContent = content else {
@@ -706,6 +718,9 @@ class WindowList {
             return nil
         }
         logMessage("[Thumbnail] Matched SCWindow ID: \(scWindow.windowID) | Title: '\(scWindow.title ?? "")' for window '\(window.ownerName):\(window.title)' (id=\(windowID))")
+        
+        captureThrottle.wait()
+        defer { captureThrottle.signal() }
         
         var capturedImage: CGImage? = nil
         let semCap = DispatchSemaphore(value: 0)

@@ -4,6 +4,7 @@ import ApplicationServices
 protocol DockHoverMonitorDelegate: AnyObject {
     func dockHoverMonitorDidHover(appName: String, itemFrame: CGRect)
     func dockHoverMonitorDidDismiss()
+    func isSwitcherVisible() -> Bool
 }
 
 class DockHoverMonitor {
@@ -27,7 +28,7 @@ class DockHoverMonitor {
         
         findDockPID()
         
-        timer = Timer.scheduledTimer(withTimeInterval: 0.03, repeats: true) { [weak self] _ in
+        timer = Timer.scheduledTimer(withTimeInterval: 0.08, repeats: true) { [weak self] _ in
             self?.checkMousePosition()
         }
     }
@@ -51,14 +52,45 @@ class DockHoverMonitor {
     }
     
     private func checkMousePosition() {
+        // If the Option+Tab switcher is visible, pause Dock hover monitoring to prevent IPC load and UI conflicts
+        if delegate?.isSwitcherVisible() ?? false {
+            if currentHoveredApp != nil {
+                currentHoveredApp = nil
+                delegate?.dockHoverMonitorDidDismiss()
+            }
+            return
+        }
+        
+        // Get mouse cursor location in Cocoa coordinates (bottom-left origin)
+        let mouseLoc = NSEvent.mouseLocation
+        
+        // Fast proximity check: Check if mouse is near any screen edge where the Dock might reside
+        // or inside an active preview window. If far in the screen interior, skip expensive AX queries entirely.
+        let targetScreen = NSScreen.screens.first(where: { NSMouseInRect(mouseLoc, $0.frame, false) }) ?? NSScreen.screens.first
+        if let screen = targetScreen {
+            let margin: CGFloat = 120.0
+            let isNearBottom = (mouseLoc.y <= screen.frame.minY + margin)
+            let isNearLeft = (mouseLoc.x <= screen.frame.minX + margin)
+            let isNearRight = (mouseLoc.x >= screen.frame.maxX - margin)
+            let isInsidePreview = previewWindowFrameProvider?().map { $0.contains(mouseLoc) } ?? false
+            
+            if !isNearBottom && !isNearLeft && !isNearRight && !isInsidePreview {
+                if currentHoveredApp != nil {
+                    hoverDelayWorkItem?.cancel()
+                    hoverDelayWorkItem = nil
+                    pendingHoveredApp = nil
+                    currentHoveredApp = nil
+                    delegate?.dockHoverMonitorDidDismiss()
+                }
+                return
+            }
+        }
+        
         // Ensure we have a valid Dock PID (fallback if Dock restarted)
         if activeDockPID == nil {
             findDockPID()
         }
         guard let dockPID = activeDockPID else { return }
-        
-        // Get mouse cursor location in Cocoa coordinates (bottom-left origin)
-        let mouseLoc = NSEvent.mouseLocation
         
         // Primary screen height to convert Y coordinates (top-left origin for screen coordinates)
         guard let primaryScreen = NSScreen.screens.first else { return }

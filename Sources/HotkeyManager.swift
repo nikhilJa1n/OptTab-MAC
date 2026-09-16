@@ -69,9 +69,12 @@ class HotkeyManager {
     private func handleEvent(proxy: CGEventTapProxy, type: CGEventType, event: CGEvent) -> Unmanaged<CGEvent>? {
         // Automatically recover if macOS disables event tap due to system load, timeout, or user input
         if type == .tapDisabledByTimeout || type == .tapDisabledByUserInput {
-            print("[HotkeyManager] Event tap disabled by OS (type=\(type.rawValue)). Auto re-enabling...")
+            AppLogger.log("[HotkeyManager] Event tap disabled by OS (type=\(type.rawValue)). Auto re-enabling...")
             if let tap = eventTap {
                 CGEvent.tapEnable(tap: tap, enable: true)
+                DispatchQueue.main.async {
+                    CGEvent.tapEnable(tap: tap, enable: true)
+                }
             }
             return Unmanaged.passUnretained(event)
         }
