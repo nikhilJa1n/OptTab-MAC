@@ -6,6 +6,7 @@
 ### 🌟 Features & Improvements
 - > [!NOTE]
 - > This is an experimental alpha pre-release intended for preview testing. Features and behaviors may change.
+- Refactor hotkey option release logic and improve logging in HotkeyManager; enhance window list handling for shareable content retrieval
 - Enhance update management by adding alpha release support, including new scripts and JSON configuration for alpha updates
 - Enhance window management by improving messaging timeouts and adding window PID mapping
 
