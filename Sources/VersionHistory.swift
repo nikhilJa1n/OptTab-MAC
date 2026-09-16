@@ -14,6 +14,18 @@ public struct VersionRelease: Identifiable {
 public struct VersionHistory {
     public static let releases: [VersionRelease] = [
         VersionRelease(
+            version: "3.5",
+            releaseDate: "September 2026",
+            isCurrent: true,
+            summary: "Refactor VisualEffectView to simplify NSView creation and update logic; adjust WindowList retry delays for better performance",
+            features: [
+                "Refactor VisualEffectView to simplify NSView creation and update logic; adjust WindowList retry delays for better performance"
+            ],
+            fixes: [
+                
+            ]
+        ),
+                VersionRelease(
             version: "3.5-alpha.3",
             releaseDate: "September 2026",
             isCurrent: false,
@@ -68,19 +80,7 @@ public struct VersionHistory {
                 
             ]
         ),
-                                VersionRelease(
-            version: "3.5",
-            releaseDate: "September 2026",
-            isCurrent: true,
-            summary: "Enhance window management by improving tabbed window reconciliation and deduplication logic",
-            features: [
-                "Enhance window management by improving tabbed window reconciliation and deduplication logic"
-            ],
-            fixes: [
-                
-            ]
-        ),
-                VersionRelease(
+                                                VersionRelease(
             version: "3.4",
             releaseDate: "September 2026",
             isCurrent: false,

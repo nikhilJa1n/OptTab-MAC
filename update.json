@@ -1,5 +1,5 @@
 {
   "version": "3.5",
   "downloadUrl": "https://github.com/nikhilJa1n/OptTab-MAC/releases/download/v3.5/OptTab.dmg",
-  "changelog": "\u2022 Enhance window management by improving tabbed window reconciliation and deduplication logic"
+  "changelog": "\u2022 Refactor VisualEffectView to simplify NSView creation and update logic; adjust WindowList retry delays for better performance"
 }
