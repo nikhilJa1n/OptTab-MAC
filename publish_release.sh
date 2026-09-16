@@ -51,7 +51,11 @@ git tag -a "$TAG" -m "Release $TAG"
 # 6. Push commits and tag to GitHub
 echo "=== Pushing commits and tag to GitHub ==="
 git push origin main
-git push origin -f "$TAG"
+
+# Safely update tag on GitHub without aborting if it already exists
+git push origin -f "refs/tags/$TAG:refs/tags/$TAG" 2>/dev/null || \
+(git push origin --delete "$TAG" 2>/dev/null && git push origin "$TAG" 2>/dev/null) || \
+echo "Notice: Tag $TAG already exists on remote, proceeding to release asset upload..."
 
 # 7. Publish release on GitHub Releases via GitHub CLI
 if command -v gh &> /dev/null; then
