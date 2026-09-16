@@ -6,44 +6,28 @@ struct VisualEffectView: NSViewRepresentable {
     let blendingMode: NSVisualEffectView.BlendingMode
     var cornerRadius: CGFloat = 0
     
-    func makeNSView(context: Context) -> NSView {
-        if #available(macOS 26.0, *) {
-            let glass = NSGlassEffectView()
-            glass.style = .regular
-            if cornerRadius > 0 {
-                glass.cornerRadius = cornerRadius
-            }
-            return glass
-        } else {
-            let view = NSVisualEffectView()
-            view.material = material
-            view.blendingMode = blendingMode
-            view.state = .active
-            
-            if cornerRadius > 0 {
-                view.wantsLayer = true
-                view.layer?.cornerRadius = cornerRadius
-                view.layer?.masksToBounds = true
-            }
-            return view
+    func makeNSView(context: Context) -> NSVisualEffectView {
+        let view = NSVisualEffectView()
+        view.material = material
+        view.blendingMode = blendingMode
+        view.state = .active
+        
+        if cornerRadius > 0 {
+            view.wantsLayer = true
+            view.layer?.cornerRadius = cornerRadius
+            view.layer?.masksToBounds = true
         }
+        return view
     }
     
-    func updateNSView(_ nsView: NSView, context: Context) {
-        if #available(macOS 26.0, *), let glass = nsView as? NSGlassEffectView {
-            glass.style = .regular
-            if cornerRadius > 0 {
-                glass.cornerRadius = cornerRadius
-            }
-        } else if let view = nsView as? NSVisualEffectView {
-            view.material = material
-            view.blendingMode = blendingMode
-            
-            if cornerRadius > 0 {
-                view.wantsLayer = true
-                view.layer?.cornerRadius = cornerRadius
-                view.layer?.masksToBounds = true
-            }
+    func updateNSView(_ nsView: NSVisualEffectView, context: Context) {
+        nsView.material = material
+        nsView.blendingMode = blendingMode
+        
+        if cornerRadius > 0 {
+            nsView.wantsLayer = true
+            nsView.layer?.cornerRadius = cornerRadius
+            nsView.layer?.masksToBounds = true
         }
     }
 }

@@ -1002,7 +1002,7 @@ class WindowList {
             }
             
             // Try immediately on background queue
-            let raised = tryRaise()
+            var raised = tryRaise()
             
             // If AX didn't find the target window, execute AppleScript fallback
             if !raised {
@@ -1010,23 +1010,25 @@ class WindowList {
                 let isStillCurrent = (currentGen == self.raiseGeneration)
                 self.raiseGenerationLock.unlock()
                 if isStillCurrent {
-                    _ = tryAppleScriptRaise()
+                    raised = tryAppleScriptRaise()
                 }
             }
             
-            // Schedule delayed AX retries on background queue (lightweight, non-blocking)
-            let delays = [0.1, 0.25, 0.5]
-            for delay in delays {
-                DispatchQueue.global(qos: .userInteractive).asyncAfter(deadline: .now() + delay) {
-                    self.raiseGenerationLock.lock()
-                    let retryCurrent = (currentGen == self.raiseGeneration)
-                    self.raiseGenerationLock.unlock()
-                    
-                    guard retryCurrent else {
-                        logMessage("  Delayed tryRaise cancelled — stale generation \(currentGen) vs \(self.raiseGeneration)")
-                        return
+            // Only schedule delayed AX retries if the initial raise attempts failed
+            if !raised {
+                let delays = [0.15, 0.35]
+                for delay in delays {
+                    DispatchQueue.global(qos: .userInteractive).asyncAfter(deadline: .now() + delay) {
+                        self.raiseGenerationLock.lock()
+                        let retryCurrent = (currentGen == self.raiseGeneration)
+                        self.raiseGenerationLock.unlock()
+                        
+                        guard retryCurrent else {
+                            logMessage("  Delayed tryRaise cancelled — stale generation \(currentGen) vs \(self.raiseGeneration)")
+                            return
+                        }
+                        _ = tryRaise()
                     }
-                    _ = tryRaise()
                 }
             }
         }
